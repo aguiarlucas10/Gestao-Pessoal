@@ -347,6 +347,29 @@ body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--t1)}
 .oo-meeting-title{font-size:13px;font-weight:500}
 .oo-meeting-sub{font-size:11px;color:var(--t3);margin-top:3px}
 
+/* ── 1:1 manage ── */
+.oo-manage-bar{display:flex;gap:6px}
+.oo-manage-btn{font-size:11px;color:var(--t3);cursor:pointer;padding:3px 7px;border-radius:5px;border:1px solid var(--b1);background:transparent;font-family:'Geist',sans-serif;transition:all .15s}
+.oo-manage-btn:hover{background:var(--s2);color:var(--t1)}
+.oo-person.hidden-person{opacity:.4}
+.oo-person.dragging{opacity:.35;border:1px dashed var(--acc)}
+.oo-person.drag-over{border-top:2px solid var(--acc)}
+.oo-item-actions{display:flex;gap:4px;opacity:0;transition:opacity .15s;flex-shrink:0}
+.oo-topic:hover .oo-item-actions,.oo-action:hover .oo-item-actions{opacity:1}
+.oo-item-btn{background:none;border:none;color:var(--t3);cursor:pointer;padding:2px 4px;font-size:11px;border-radius:4px;transition:all .15s}
+.oo-item-btn:hover{color:var(--t1);background:var(--s3)}
+.oo-item-btn.del:hover{color:var(--red)}
+.oo-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:1000}
+.oo-modal{background:var(--s1);border:1px solid var(--b1);border-radius:12px;padding:20px;width:380px;max-width:90vw;display:flex;flex-direction:column;gap:14px}
+.oo-modal h3{font-family:'Instrument Serif',serif;font-size:18px;margin:0;color:var(--t1)}
+.oo-modal label{font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.05em;font-family:'Geist Mono',monospace}
+.oo-modal input,.oo-modal select{background:var(--s2);border:1px solid var(--b1);border-radius:7px;padding:8px 10px;font-size:13px;color:var(--t1);font-family:'Geist',sans-serif;outline:none;width:100%;box-sizing:border-box}
+.oo-modal input:focus{border-color:rgba(79,124,255,.35)}
+.oo-modal-btns{display:flex;gap:8px;justify-content:flex-end}
+.oo-color-grid{display:flex;gap:6px;flex-wrap:wrap}
+.oo-color-opt{width:24px;height:24px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .15s}
+.oo-color-opt:hover,.oo-color-opt.sel{border-color:white;transform:scale(1.15)}
+
 /* ── SIDE PANEL ── */
 .side-panel{width:0;flex-shrink:0;overflow:hidden;border-left:1px solid transparent;display:flex;flex-direction:column;background:var(--s1);transition:width .25s ease}
 .side-panel.open{width:320px;border-color:var(--b1)}
@@ -604,6 +627,10 @@ select.modal-input{cursor:pointer}
         <div class="oneone-list">
           <div class="oneone-list-head">
             <span class="oneone-list-title">1:1s</span>
+            <div class="oo-manage-bar">
+              <button class="oo-manage-btn" onclick="toggleOOHidden()" title="Mostrar/ocultar pessoas escondidas">👁</button>
+              <button class="oo-manage-btn" onclick="openPersonModal()" title="Adicionar pessoa">+</button>
+            </div>
           </div>
           <div class="oneone-items" id="oo-items"></div>
         </div>
@@ -685,14 +712,15 @@ const sb = createClient(SB_URL, SB_ANON);
 // ══════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════
-const PEOPLE = [
-  { id:'lucas',    name:'Lucas',    init:'L',  role:'Diretor Comercial',       color:'#4f7cff', bg:'rgba(79,124,255,.2)' },
-  { id:'rafa',     name:'Rafa',     init:'R',  role:'Site / CRM / Promoções',  color:'#2dce89', bg:'rgba(45,206,137,.2)' },
-  { id:'edu',      name:'Edu',      init:'E',  role:'Marketplace (Elevate)',   color:'#ff8c42', bg:'rgba(255,140,66,.2)' },
-  { id:'gustavo',  name:'Gustavo',  init:'G',  role:'Lead Comercial',          color:'#a78bfa', bg:'rgba(167,139,250,.2)' },
-  { id:'catarina', name:'Catarina', init:'C',  role:'Diretora de Operações',   color:'#ff4d6d', bg:'rgba(255,77,109,.2)' },
-  { id:'junior',   name:'Junior',   init:'JR', role:'Founder / Owner',         color:'#ffd166', bg:'rgba(255,209,102,.2)' },
+let PEOPLE = [
+  { id:'lucas',    name:'Lucas',    init:'L',  role:'Diretor Comercial',       color:'#4f7cff', bg:'rgba(79,124,255,.2)', hidden:false },
+  { id:'rafa',     name:'Rafa',     init:'R',  role:'Site / CRM / Promoções',  color:'#2dce89', bg:'rgba(45,206,137,.2)', hidden:false },
+  { id:'edu',      name:'Edu',      init:'E',  role:'Marketplace (Elevate)',   color:'#ff8c42', bg:'rgba(255,140,66,.2)', hidden:false },
+  { id:'gustavo',  name:'Gustavo',  init:'G',  role:'Lead Comercial',          color:'#a78bfa', bg:'rgba(167,139,250,.2)', hidden:false },
+  { id:'catarina', name:'Catarina', init:'C',  role:'Diretora de Operações',   color:'#ff4d6d', bg:'rgba(255,77,109,.2)', hidden:false },
+  { id:'junior',   name:'Junior',   init:'JR', role:'Founder / Owner',         color:'#ffd166', bg:'rgba(255,209,102,.2)', hidden:false },
 ];
+let ooShowHidden=false, ooDragIdx=null;
 
 const today = new Date();
 const isoToday = isoDate(today);
@@ -1327,16 +1355,98 @@ async function addDemandsToBoard(){
 // ══════════════════════════════════════════════
 // 1:1
 // ══════════════════════════════════════════════
+// ── People management ──
+const OO_COLORS=[{hex:'#4f7cff',bg:'rgba(79,124,255,.2)'},{hex:'#2dce89',bg:'rgba(45,206,137,.2)'},{hex:'#ff8c42',bg:'rgba(255,140,66,.2)'},{hex:'#a78bfa',bg:'rgba(167,139,250,.2)'},{hex:'#ff4d6d',bg:'rgba(255,77,109,.2)'},{hex:'#ffd166',bg:'rgba(255,209,102,.2)'},{hex:'#36d6c3',bg:'rgba(54,214,195,.2)'},{hex:'#f472b6',bg:'rgba(244,114,182,.2)'}];
+
+function toggleOOHidden(){ ooShowHidden=!ooShowHidden; renderOneOne(); }
+
+function openPersonModal(editId){
+  const existing=editId?PEOPLE.find(p=>p.id===editId):null;
+  const title=existing?'Editar Pessoa':'Adicionar Pessoa';
+  const name=existing?existing.name:'';
+  const role=existing?existing.role:'';
+  const selColor=existing?existing.color:OO_COLORS[0].hex;
+  document.body.insertAdjacentHTML('beforeend',`
+    <div class="oo-modal-overlay" id="oo-person-modal" onclick="if(event.target===this)this.remove()">
+      <div class="oo-modal">
+        <h3>${title}</h3>
+        <div><label>Nome</label><input id="opm-name" value="${name}" placeholder="Nome da pessoa"></div>
+        <div><label>Cargo / Papel</label><input id="opm-role" value="${role}" placeholder="Ex: Diretor Comercial"></div>
+        <div><label>Cor</label><div class="oo-color-grid" id="opm-colors">
+          ${OO_COLORS.map(c=>`<div class="oo-color-opt ${c.hex===selColor?'sel':''}" style="background:${c.hex}" data-hex="${c.hex}" data-bg="${c.bg}" onclick="document.querySelectorAll('.oo-color-opt').forEach(e=>e.classList.remove('sel'));this.classList.add('sel')"></div>`).join('')}
+        </div></div>
+        <div class="oo-modal-btns">
+          <button class="btn-sm" onclick="document.getElementById('oo-person-modal').remove()">Cancelar</button>
+          <button class="btn-sm primary" onclick="savePersonModal('${editId||''}')">${existing?'Salvar':'Adicionar'}</button>
+        </div>
+      </div>
+    </div>`);
+  document.getElementById('opm-name').focus();
+}
+
+function savePersonModal(editId){
+  const name=document.getElementById('opm-name').value.trim();
+  const role=document.getElementById('opm-role').value.trim();
+  const selEl=document.querySelector('.oo-color-opt.sel');
+  if(!name){ toast('Preencha o nome','error'); return; }
+  const color=selEl?selEl.dataset.hex:OO_COLORS[0].hex;
+  const bg=selEl?selEl.dataset.bg:OO_COLORS[0].bg;
+  const init=name.length<=2?name.toUpperCase():name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  if(editId){
+    const p=PEOPLE.find(x=>x.id===editId);
+    if(p){ p.name=name; p.role=role; p.color=color; p.bg=bg; p.init=init; }
+  } else {
+    const id=name.toLowerCase().replace(/[^a-z0-9]/g,'')+'_'+Date.now();
+    PEOPLE.push({id,name,init,role,color,bg,hidden:false});
+    oo11[id]={topics:[],actions:[],notes:''};
+  }
+  document.getElementById('oo-person-modal').remove();
+  renderOneOne();
+  if(ooSelected===editId) selectOO(editId);
+  toast(editId?'Pessoa atualizada':'Pessoa adicionada');
+}
+
+function toggleHidePerson(pid){
+  const p=PEOPLE.find(x=>x.id===pid);
+  if(p){ p.hidden=!p.hidden; renderOneOne(); toast(p.hidden?`${p.name} oculto(a)`:`${p.name} visível`); }
+}
+
 function renderOneOne(){
   const wrap=document.getElementById('oo-items');
-  wrap.innerHTML=['rafa','edu','gustavo','catarina','junior'].map(pid=>{
-    const p=person(pid), data=oo11[pid];
+  const visible=PEOPLE.filter(p=>p.id!=='lucas'&&(!p.hidden||ooShowHidden));
+  wrap.innerHTML=visible.map((pp,idx)=>{
+    const pid=pp.id, data=oo11[pid];
     const pend=data?data.actions.filter(a=>!a.done).length:0;
-    return `<div class="oo-person ${ooSelected===pid?'active':''}" onclick="selectOO('${pid}')">
-      ${av(p,32)}<div style="flex:1;min-width:0"><div class="oo-person-name">${p.name}</div><div class="oo-person-last">${p.role}</div></div>
+    return `<div class="oo-person ${ooSelected===pid?'active':''} ${pp.hidden?'hidden-person':''}"
+      draggable="true" data-oo-idx="${idx}"
+      ondragstart="ooDragStart(event,${idx})" ondragover="ooDragOver(event,${idx})" ondragleave="ooDragLeave(event)" ondrop="ooDrop(event,${idx})" ondragend="ooDragEnd(event)"
+      onclick="selectOO('${pid}')">
+      ${av(pp,32)}<div style="flex:1;min-width:0"><div class="oo-person-name">${pp.name}</div><div class="oo-person-last">${pp.role}</div></div>
+      <div class="oo-item-actions" onclick="event.stopPropagation()">
+        <button class="oo-item-btn" onclick="openPersonModal('${pid}')" title="Editar">✎</button>
+        <button class="oo-item-btn" onclick="toggleHidePerson('${pid}')" title="${pp.hidden?'Mostrar':'Ocultar'}">${pp.hidden?'👁':'🚫'}</button>
+      </div>
       <div class="oo-badge">${pend}</div>
     </div>`;
   }).join('');
+}
+
+// ── Drag & drop people ──
+function ooDragStart(e,idx){ ooDragIdx=idx; e.currentTarget.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; }
+function ooDragOver(e,idx){ e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+function ooDragLeave(e){ e.currentTarget.classList.remove('drag-over'); }
+function ooDragEnd(e){ e.currentTarget.classList.remove('dragging'); document.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over')); }
+function ooDrop(e,toIdx){
+  e.preventDefault(); e.currentTarget.classList.remove('drag-over');
+  if(ooDragIdx===null||ooDragIdx===toIdx) return;
+  const visible=PEOPLE.filter(p=>p.id!=='lucas'&&(!p.hidden||ooShowHidden));
+  const fromPid=visible[ooDragIdx]?.id, toPid=visible[toIdx]?.id;
+  if(!fromPid||!toPid) return;
+  const fi=PEOPLE.findIndex(p=>p.id===fromPid), ti=PEOPLE.findIndex(p=>p.id===toPid);
+  const [moved]=PEOPLE.splice(fi,1);
+  PEOPLE.splice(ti,0,moved);
+  ooDragIdx=null;
+  renderOneOne();
 }
 
 function selectOO(pid){
@@ -1353,7 +1463,13 @@ function selectOO(pid){
     <div class="oo-body">
       <div class="oo-section">
         <div class="oo-section-head"><div class="oo-section-title">📋 Pauta</div><button class="oo-section-add" onclick="addOOTopic('${pid}')">+ Tópico</button></div>
-        ${data.topics.map((t,i)=>`<div class="oo-topic"><div class="oo-topic-num">${i+1}</div><div class="oo-topic-text">${t}</div></div>`).join('')}
+        ${data.topics.map((t,i)=>`<div class="oo-topic">
+          <div class="oo-topic-num">${i+1}</div><div class="oo-topic-text">${t}</div>
+          <div class="oo-item-actions">
+            <button class="oo-item-btn" onclick="editOOTopic('${pid}',${i})" title="Editar">✎</button>
+            <button class="oo-item-btn del" onclick="delOOTopic('${pid}',${i})" title="Excluir">✕</button>
+          </div>
+        </div>`).join('')}
       </div>
       <div class="oo-section" id="oo-act-${pid}">
         <div class="oo-section-head"><div class="oo-section-title">⚡ Action Items</div></div>
@@ -1368,6 +1484,10 @@ function selectOO(pid){
         ${tasks.filter(t=>t.person===pid&&!t.done).slice(0,6).map(t=>`
           <div class="oo-action">
             <div style="flex:1"><div class="oo-action-text">${t.title}</div><div class="oo-action-meta"><span class="tag ${t.priority}">${t.priority.toUpperCase()}</span><span class="tag dt">${formatDate(t.dueDate)}</span></div></div>
+            <div class="oo-item-actions">
+              <button class="oo-item-btn" onclick="openPanel('${t.id}')" title="Editar">✎</button>
+              <button class="oo-item-btn del" onclick="if(confirm('Excluir demanda?')){deleteTask('${t.id}');selectOO('${pid}')}" title="Excluir">✕</button>
+            </div>
             <div class="oo-action-chk ${t.done?'done':''}" onclick="toggleDone('${t.id}');selectOO('${pid}')"></div>
           </div>`).join('') || '<div style="font-size:12px;color:var(--t3);padding:6px 0">Nenhuma demanda em aberto.</div>'}
       </div>
@@ -1379,6 +1499,10 @@ function renderOOActions(pid){
   return data.actions.map((a,i)=>`
     <div class="oo-action">
       <div style="flex:1"><div class="oo-action-text">${a.done?`<s style="color:var(--t3)">${a.text}</s>`:a.text}</div><div class="oo-action-meta"><span class="tag ${a.prio}">${a.prio.toUpperCase()}</span></div></div>
+      <div class="oo-item-actions">
+        <button class="oo-item-btn" onclick="editOOAction('${pid}',${i})" title="Editar">✎</button>
+        <button class="oo-item-btn del" onclick="delOOAction('${pid}',${i})" title="Excluir">✕</button>
+      </div>
       <div class="oo-action-chk ${a.done?'done':''}" onclick="toggleOOAct('${pid}',${i})">
         ${a.done?`<svg width="7" height="7" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>`:''}
       </div>
@@ -1386,8 +1510,14 @@ function renderOOActions(pid){
 }
 
 function toggleOOAct(pid,i){ oo11[pid].actions[i].done=!oo11[pid].actions[i].done; const el=document.getElementById(`oo-act-${pid}`); if(el){ el.innerHTML=`<div class="oo-section-head"><div class="oo-section-title">⚡ Action Items</div></div>${renderOOActions(pid)}`; } renderOneOne(); }
-function addOOAction(pid){ const txt=prompt('Novo action item:'); if(!txt) return; oo11[pid].actions.push({text:txt,done:false,prio:'media'}); selectOO(pid); }
+function addOOAction(pid){ const txt=prompt('Novo action item:'); if(!txt) return; const prio=prompt('Prioridade (alta/media/baixa):','media')||'media'; oo11[pid].actions.push({text:txt,done:false,prio}); selectOO(pid); }
 function addOOTopic(pid){ const txt=prompt('Novo tópico de pauta:'); if(!txt) return; oo11[pid].topics.push(txt); selectOO(pid); }
+
+// ── Edit / Delete topics & actions ──
+function editOOTopic(pid,i){ const txt=prompt('Editar tópico:',oo11[pid].topics[i]); if(txt===null) return; oo11[pid].topics[i]=txt; selectOO(pid); }
+function delOOTopic(pid,i){ if(!confirm('Excluir este tópico?')) return; oo11[pid].topics.splice(i,1); selectOO(pid); toast('Tópico excluído'); }
+function editOOAction(pid,i){ const a=oo11[pid].actions[i]; const txt=prompt('Editar action item:',a.text); if(txt===null) return; a.text=txt; const prio=prompt('Prioridade (alta/media/baixa):',a.prio); if(prio) a.prio=prio; selectOO(pid); }
+function delOOAction(pid,i){ if(!confirm('Excluir este action item?')) return; oo11[pid].actions.splice(i,1); selectOO(pid); renderOneOne(); toast('Action item excluído'); }
 
 // ══════════════════════════════════════════════
 // INIT
