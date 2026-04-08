@@ -789,7 +789,6 @@ async function doLogin(){
 async function doLogout(){
   try {
     await sb.auth.signOut();
-    // Reset state
     _authLoaded=false;
     tasks=[];
     PEOPLE=[...DEFAULT_PEOPLE];
@@ -800,7 +799,12 @@ async function doLogout(){
     localStorage.removeItem('oo_data');
     document.getElementById('shell').style.display='none';
     document.getElementById('auth-screen').style.display='flex';
-  } catch(e){ console.error('Logout error:',e); location.reload(); }
+    // Reset login form
+    const btn=document.getElementById('auth-btn');
+    btn.disabled=false; btn.textContent='Entrar';
+    document.getElementById('auth-err').textContent='';
+    document.getElementById('auth-pass').value='';
+  } catch(e){ location.reload(); }
 }
 
 let _authLoaded=false;
