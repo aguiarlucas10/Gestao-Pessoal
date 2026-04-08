@@ -1489,33 +1489,46 @@ function loadOOFromLocal(){
   } catch(e){ return false; }
 }
 
-async function loadOOState(){
-  let loaded=false;
+async function loadOOFromSupabase(){
+  // Try up to 2 times (session may not be ready on first try)
+  for(let attempt=0; attempt<2; attempt++){
+    try {
+      const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').maybeSingle();
+      if(error){ console.warn('loadOO attempt',attempt,error.message); continue; }
+      if(data){
+        if(data.people && Array.isArray(data.people) && data.people.length) PEOPLE=data.people;
+        if(data.oo_data && typeof data.oo_data==='object' && Object.keys(data.oo_data).length) oo11=data.oo_data;
+        return true;
+      }
+      return false; // query ok but no data
+    } catch(e){ console.warn('loadOO attempt',attempt,e); }
+    // Small delay before retry
+    await new Promise(r=>setTimeout(r,500));
+  }
+  return false;
+}
 
-  // 1. localStorage first (instant, avoids flash of defaults)
-  loaded=loadOOFromLocal();
-  if(loaded){
+async function loadOOState(){
+  // 1. localStorage cache first (instant UI)
+  const localLoaded=loadOOFromLocal();
+  if(localLoaded){
     PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
     renderOneOne();
   }
 
-  // 2. Supabase (source of truth, may override localStorage)
-  try {
-    const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').maybeSingle();
-    if(!error && data){
-      if(data.people && Array.isArray(data.people) && data.people.length) PEOPLE=data.people;
-      if(data.oo_data && typeof data.oo_data==='object' && Object.keys(data.oo_data).length) oo11=data.oo_data;
-      PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
-      saveOOLocal();
-      renderOneOne();
-      return;
-    }
-  } catch(e){ console.error('loadOOState supabase:',e); }
+  // 2. Supabase (source of truth)
+  const sbLoaded=await loadOOFromSupabase();
+  if(sbLoaded){
+    PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
+    saveOOLocal();
+    renderOneOne();
+    return;
+  }
 
-  // 3. If Supabase had nothing but localStorage loaded, keep it
-  if(loaded) return;
+  // 3. If localStorage had data, keep it
+  if(localLoaded) return;
 
-  // 4. First time ever — use defaults and save
+  // 4. First time — defaults
   PEOPLE=[...DEFAULT_PEOPLE];
   oo11={};
   PEOPLE.forEach(p=>{ oo11[p.id]={topics:[],actions:[],notes:''}; });
