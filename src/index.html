@@ -738,14 +738,8 @@ let currentView='board';
 let mediaRecorder=null, recStream=null, recInterval=null, recSeconds=0;
 let transcriptLines=[], aiDemands=[];
 
-// 1:1 local state
-const oo11={
-  rafa:{ topics:['Progresso do catálogo TikTok Shop','Status landing page Alerta Promo','Backlog automações n8n'], actions:[{text:'Subir 20 SKUs no TikTok',done:false,prio:'alta'},{text:'Revisar CTA da landing',done:false,prio:'media'}], notes:'' },
-  edu:{ topics:['GMV semanal e tendências','Reputação Mercado Livre','Campanha relâmpago SG'], actions:[{text:'Enviar relatório sell-out até terça',done:false,prio:'media'},{text:'Verificar frete novos SKUs',done:false,prio:'baixa'}], notes:'' },
-  gustavo:{ topics:['Check-in 30 dias','Pipeline candidatos logística','Metas comerciais Q2'], actions:[{text:'Entregar lista 3 candidatos',done:false,prio:'alta'},{text:'Alinhar metas individuais',done:false,prio:'alta'}], notes:'' },
-  catarina:{ topics:['Mix kiosk Mooca','Logística reversa','OKRs operações Q2'], actions:[{text:'Mix final kiosk até quarta',done:false,prio:'media'},{text:'Atualizar SLA entrega',done:false,prio:'baixa'}], notes:'' },
-  junior:{ topics:['Revisão metas receita 2026','Canopus PR — status','Novos canais distribuição'], actions:[{text:'Apresentar planilha metas Q2',done:false,prio:'alta'},{text:'Budget Dia das Mães',done:false,prio:'alta'}], notes:'' },
-};
+// 1:1 local state (populated from Supabase on login)
+let oo11={};
 
 // ══════════════════════════════════════════════
 // UTILS
@@ -797,7 +791,6 @@ sb.auth.onAuthStateChange(async(event, session)=>{
     document.getElementById('user-av').textContent=email[0].toUpperCase();
     await loadTasks();
     await loadOOState();
-    renderOneOne();
     scheduleNotifCheck();
   } else {
     document.getElementById('auth-screen').style.display='flex';
@@ -1446,36 +1439,38 @@ async function saveOOToSupabase(){
 }
 
 async function loadOOState(){
-  // 1. Try loading from Supabase first
+  let loaded=false;
+  // 1. Try loading from Supabase
   try {
     const { data:{ session } }=await sb.auth.getSession();
     if(session){
       const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').single();
       if(!error && data){
         if(data.people && data.people.length) PEOPLE=data.people;
-        if(data.oo_data){
-          Object.keys(data.oo_data).forEach(k=>{ oo11[k]=data.oo_data[k]; });
-        }
-        PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
-        // Sync to localStorage
-        localStorage.setItem('oo_people',JSON.stringify(PEOPLE));
-        localStorage.setItem('oo_data',JSON.stringify(oo11));
-        renderOneOne();
-        return;
+        if(data.oo_data) oo11=data.oo_data;
+        loaded=true;
       }
     }
   } catch(e){ console.warn('loadOOState supabase error:',e); }
   // 2. Fallback to localStorage
-  try {
-    const sp=localStorage.getItem('oo_people');
-    if(sp){ PEOPLE=JSON.parse(sp); }
-    const sd=localStorage.getItem('oo_data');
-    if(sd){
-      const loaded=JSON.parse(sd);
-      Object.keys(loaded).forEach(k=>{ oo11[k]=loaded[k]; });
-    }
-    PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
-  } catch(e){ console.warn('loadOOState localStorage error:',e); }
+  if(!loaded){
+    try {
+      const sp=localStorage.getItem('oo_people');
+      if(sp){ PEOPLE=JSON.parse(sp); loaded=true; }
+      const sd=localStorage.getItem('oo_data');
+      if(sd){ oo11=JSON.parse(sd); loaded=true; }
+    } catch(e){ console.warn('loadOOState localStorage error:',e); }
+  }
+  // 3. Ensure all people have oo11 entries
+  PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
+  // Sync to localStorage
+  localStorage.setItem('oo_people',JSON.stringify(PEOPLE));
+  localStorage.setItem('oo_data',JSON.stringify(oo11));
+  renderOneOne();
+  // 4. If first time (no data in Supabase), save defaults
+  if(!loaded){
+    try { await saveOOToSupabase(); } catch(e){}
+  }
 }
 
 // ── People management ──
@@ -1650,7 +1645,6 @@ function delOOAction(pid,i){ if(!confirm('Excluir este action item?')) return; o
 // INIT
 // ══════════════════════════════════════════════
 function init(){
-  loadOOState();
   document.getElementById('topbar-date').textContent=today.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'}).toUpperCase();
   document.getElementById('m-date').value=isoToday;
   document.getElementById('meeting-date').value=isoToday;
