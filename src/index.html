@@ -815,8 +815,13 @@ sb.auth.onAuthStateChange(async(event, session)=>{
     const email=session.user.email;
     document.getElementById('user-email').textContent=email;
     document.getElementById('user-av').textContent=email[0].toUpperCase();
+    // Reset login button
+    const lb=document.getElementById('auth-btn');
+    if(lb){ lb.disabled=false; lb.textContent='Entrar'; }
     if(!_authLoaded){
       _authLoaded=true;
+      // Ensure session is propagated to the client before queries
+      await sb.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
       await loadTasks();
       await loadOOState();
       scheduleNotifCheck();
