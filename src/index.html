@@ -261,16 +261,17 @@ body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--t1)}
 .meta-input{background:var(--s2);border:1px solid var(--b1);border-radius:7px;padding:6px 10px;font-size:12px;color:var(--t1);font-family:'Geist',sans-serif;outline:none;transition:border-color .15s}
 .meta-input:focus{border-color:rgba(79,124,255,.4)}
 .meta-input::placeholder{color:var(--t4)}
-.transcript-area{flex:1;overflow-y:auto;padding:16px 20px}
-.transcript-area::-webkit-scrollbar{width:4px}
-.transcript-area::-webkit-scrollbar-thumb{background:var(--b2);border-radius:99px}
-.transcript-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--t3);text-align:center}
+.transcript-area{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:0}
+.transcript-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--t3);text-align:center;padding:20px}
 .transcript-empty .ei{font-size:40px;opacity:.4}
-.trans-line{display:flex;gap:10px;margin-bottom:10px;animation:fadeUp .3s ease both}
-@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-.trans-line-time{font-family:'Geist Mono',monospace;font-size:10px;color:var(--t3);min-width:42px;padding-top:3px}
-.trans-line-text{font-size:13px;line-height:1.6;color:var(--t2);background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:8px 12px;flex:1}
-.trans-line-text.partial{color:var(--t3);border-style:dashed}
+.trans-textarea{flex:1;background:var(--bg);border:none;padding:16px 20px;font-size:13px;line-height:1.8;color:var(--t1);font-family:'Geist',sans-serif;resize:none;outline:none;overflow-y:auto}
+.trans-textarea::-webkit-scrollbar{width:4px}
+.trans-textarea::-webkit-scrollbar-thumb{background:var(--b2);border-radius:99px}
+.trans-textarea::placeholder{color:var(--t4)}
+.trans-live-bar{padding:8px 20px;border-top:1px solid var(--b1);display:flex;align-items:center;gap:10px;flex-shrink:0;min-height:36px;background:var(--s1)}
+.trans-live-dot{width:6px;height:6px;border-radius:50%;background:var(--red);animation:pulse-rec 1.5s ease-in-out infinite;flex-shrink:0}
+.trans-live-text{font-size:12px;color:var(--t3);font-style:italic;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.trans-word-count{font-family:'Geist Mono',monospace;font-size:10px;color:var(--t4);flex-shrink:0}
 .trans-panel-head{padding:12px 16px;border-bottom:1px solid var(--b1);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .trans-panel-title{font-size:12px;font-weight:600;color:var(--t2);letter-spacing:.02em}
 .trans-ai-area{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
@@ -601,8 +602,14 @@ select.modal-input{cursor:pointer}
               <div class="transcript-empty" id="transcript-empty">
                 <div class="ei">🎙️</div>
                 <p>Clique em <strong>Iniciar Gravação</strong> para transcrição em tempo real.</p>
-                <p style="font-size:11px;color:var(--t4);margin-top:4px">O texto aparece instantaneamente enquanto você fala. Use "Refinar (Whisper)" para melhorar a precisão.</p>
+                <p style="font-size:11px;color:var(--t4);margin-top:4px">O texto aparece enquanto você fala. Edite livremente antes de gerar a ata.</p>
               </div>
+              <textarea class="trans-textarea" id="trans-text" placeholder="A transcrição aparecerá aqui..." style="display:none" oninput="updateWordCount()"></textarea>
+            </div>
+            <div class="trans-live-bar" id="trans-live-bar" style="display:none">
+              <div class="trans-live-dot"></div>
+              <div class="trans-live-text" id="trans-live-text">Ouvindo...</div>
+              <div class="trans-word-count" id="trans-word-count">0 palavras</div>
             </div>
           </div>
           <div class="trans-right">
@@ -1216,15 +1223,31 @@ async function addTask(){
 // ══════════════════════════════════════════════
 // TRANSCRIPTION (via Edge Function — sem key exposta)
 // ══════════════════════════════════════════════
-let recStream2=null, speechRec=null, isRecording=false, interimLineId=null;
+let recStream2=null, speechRec=null, isRecording=false;
+let audioChunks=[];
+
+function getTransText(){ return document.getElementById('trans-text'); }
+function getTranscriptContent(){ return getTransText().value.trim(); }
+function updateWordCount(){
+  const text=getTranscriptContent();
+  const words=text?text.split(/\s+/).length:0;
+  const el=document.getElementById('trans-word-count');
+  if(el) el.textContent=words+' palavras';
+}
+
+function showTransTextarea(){
+  document.getElementById('transcript-empty').style.display='none';
+  const ta=getTransText();
+  ta.style.display='block';
+}
 
 async function toggleRecording(){
   const btn=document.getElementById('rec-btn');
   if(!isRecording){
     try {
-      // Start real-time speech recognition
       const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-      if(!SpeechRecognition){ toast('Navegador não suporta transcrição em tempo real. Use Chrome ou Edge.','error'); return; }
+      if(!SpeechRecognition){ toast('Use Chrome ou Edge para transcrição em tempo real.','error'); return; }
+
       speechRec=new SpeechRecognition();
       speechRec.continuous=true;
       speechRec.interimResults=true;
@@ -1235,58 +1258,58 @@ async function toggleRecording(){
         let interim='', finalText='';
         for(let i=e.resultIndex;i<e.results.length;i++){
           const t=e.results[i][0].transcript;
-          if(e.results[i].isFinal){ finalText+=t; }
-          else { interim+=t; }
+          if(e.results[i].isFinal) finalText+=t;
+          else interim+=t;
         }
-        // Show final results as permanent lines
         if(finalText.trim()){
-          if(interimLineId){ removeTranscriptLine(interimLineId); interimLineId=null; }
-          addTranscriptLine(finalText.trim());
+          const ta=getTransText();
+          const sep=ta.value && !ta.value.endsWith('\n') && !ta.value.endsWith(' ')?' ':'';
+          ta.value+=sep+finalText.trim();
+          ta.scrollTop=ta.scrollHeight;
+          updateWordCount();
+          transcriptLines=[{id:'full',time:'',text:ta.value}];
         }
-        // Show interim results as partial (typing indicator)
-        if(interim.trim()){
-          if(interimLineId){
-            updateTranscriptLine(interimLineId, interim.trim(), true);
-          } else {
-            interimLineId=addTranscriptLine(interim.trim(), true);
-          }
-        }
+        const liveEl=document.getElementById('trans-live-text');
+        if(liveEl) liveEl.textContent=interim.trim()||'Ouvindo...';
       };
 
       speechRec.onerror=(e)=>{
-        if(e.error==='no-speech') return; // normal, just silence
-        if(e.error==='aborted') return;
+        if(e.error==='no-speech'||e.error==='aborted') return;
         toast('Erro no reconhecimento: '+e.error,'error');
       };
 
-      // Auto-restart if recognition ends while still recording
       speechRec.onend=()=>{
-        if(isRecording){
-          try { speechRec.start(); } catch(ex){}
-        }
+        if(isRecording){ try{ speechRec.start(); }catch(ex){} }
       };
 
       speechRec.start();
       isRecording=true;
 
-      // Also start audio recording for Whisper refinement if needed
+      // Audio capture for Whisper
       recStream2=await navigator.mediaDevices.getUserMedia({audio:true});
-      startAudioCapture(recStream2);
+      const mt=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
+      mediaRecorder=new MediaRecorder(recStream2,{mimeType:mt});
+      audioChunks=[];
+      mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) audioChunks.push(e.data); };
+      mediaRecorder.start(10000);
 
+      showTransTextarea();
       btn.className='rec-btn recording';
       document.getElementById('rec-label').textContent='Parar Gravação';
       document.getElementById('rec-timer').style.display='block';
+      document.getElementById('trans-live-bar').style.display='flex';
       startTimer();
-      document.getElementById('transcript-empty').style.display='none';
       toast('Transcrição em tempo real iniciada');
     } catch(e){ toast('Erro: '+e.message,'error'); }
   } else {
     stopRec();
     btn.className='rec-btn idle';
     document.getElementById('rec-label').textContent='Iniciar Gravação';
+    document.getElementById('rec-timer').style.display='none';
+    document.getElementById('trans-live-bar').style.display='none';
     clearInterval(recInterval);
-    if(interimLineId){ removeTranscriptLine(interimLineId); interimLineId=null; }
-    toast('Gravação finalizada');
+    updateWordCount();
+    toast('Gravação finalizada — edite o texto e clique em Gerar com IA');
   }
 }
 
@@ -1300,16 +1323,6 @@ function startTimer(){
   },1000);
 }
 
-// Audio capture (keeps recording for potential Whisper refinement)
-let audioChunks=[];
-function startAudioCapture(stream){
-  const mt=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
-  mediaRecorder=new MediaRecorder(stream,{mimeType:mt});
-  audioChunks=[];
-  mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) audioChunks.push(e.data); };
-  mediaRecorder.start(10000);
-}
-
 function stopRec(){
   isRecording=false;
   if(speechRec){ try{ speechRec.stop(); }catch(ex){} speechRec=null; }
@@ -1318,13 +1331,15 @@ function stopRec(){
   mediaRecorder=null;
 }
 
-// Whisper refinement — sends recorded audio to get higher quality transcript
 async function refineWithWhisper(){
   if(!audioChunks.length){ toast('Nenhum áudio gravado para refinar','error'); return; }
   const mt=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
   const blob=new Blob(audioChunks,{type:mt});
   if(blob.size<1000){ toast('Áudio muito curto','error'); return; }
-  const partial=addTranscriptLine('Refinando com Whisper...', true);
+  const ta=getTransText();
+  const oldText=ta.value;
+  ta.value='Refinando transcrição com Whisper...';
+  ta.disabled=true;
   try {
     const { data:{ session } }=await sb.auth.getSession();
     const fd=new FormData(); fd.append('file',blob,'audio.webm');
@@ -1335,37 +1350,38 @@ async function refineWithWhisper(){
     });
     const data=await res.json();
     if(data.text?.trim()){
-      removeTranscriptLine(partial);
-      // Replace all transcript with Whisper version
-      const area=document.getElementById('transcript-area');
-      area.innerHTML='';
-      transcriptLines=[];
-      data.text.trim().split(/[.!?]+/).filter(s=>s.trim()).forEach(s=>addTranscriptLine(s.trim()+'.'));
-      toast('Transcript refinado com Whisper');
-    } else { removeTranscriptLine(partial); toast('Whisper não retornou texto','error'); }
-  } catch(e){ removeTranscriptLine(partial); toast('Erro ao refinar: '+e.message,'error'); }
+      ta.value=data.text.trim();
+      transcriptLines=[{id:'full',time:'',text:ta.value}];
+      updateWordCount();
+      toast('Transcrição refinada com Whisper');
+    } else { ta.value=oldText; toast('Whisper não retornou texto','error'); }
+  } catch(e){ ta.value=oldText; toast('Erro: '+e.message,'error'); }
+  ta.disabled=false;
 }
 
-function addTranscriptLine(text, partial=false){
-  document.getElementById('transcript-empty').style.display='none';
-  const area=document.getElementById('transcript-area');
-  const now=new Date();
-  const time=`${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
-  const id='tl-'+Date.now();
-  const div=document.createElement('div'); div.className='trans-line'; div.id=id;
-  div.innerHTML=`<div class="trans-line-time">${time}</div><div class="trans-line-text ${partial?'partial':''}">${text}</div>`;
-  area.appendChild(div); area.scrollTop=area.scrollHeight;
-  transcriptLines.push({id,time,text});
-  return id;
+function clearTranscript(){
+  const ta=getTransText();
+  ta.value=''; ta.style.display='none';
+  document.getElementById('transcript-empty').style.display='flex';
+  document.getElementById('trans-live-bar').style.display='none';
+  transcriptLines=[]; aiDemands=[]; audioChunks=[];
+  updateWordCount();
+  document.getElementById('trans-ai-area').innerHTML=`<div style="color:var(--t4);font-size:12px;line-height:1.7">Após gravar ou colar o transcript, clique em <strong style="color:var(--t2)">Gerar com IA</strong>.</div>`;
 }
-function updateTranscriptLine(id,text,keepPartial=false){ const el=document.getElementById(id); if(!el)return; el.querySelector('.trans-line-text').textContent=text; if(!keepPartial) el.querySelector('.trans-line-text').classList.remove('partial'); const tl=transcriptLines.find(l=>l.id===id); if(tl) tl.text=text; const area=document.getElementById('transcript-area'); area.scrollTop=area.scrollHeight; }
-function removeTranscriptLine(id){ const el=document.getElementById(id); if(el) el.remove(); transcriptLines=transcriptLines.filter(l=>l.id!==id); }
-function clearTranscript(){ document.getElementById('transcript-area').innerHTML=`<div class="transcript-empty" id="transcript-empty"><div class="ei">🎙️</div><p>Clique em <strong>Iniciar Gravação</strong> para começar.</p></div>`; transcriptLines=[]; aiDemands=[]; document.getElementById('trans-ai-area').innerHTML=`<div style="color:var(--t4);font-size:12px;line-height:1.7">Após gravar, clique em <strong style="color:var(--t2)">Gerar com IA</strong>.</div>`; }
-function pasteMode(){ const txt=prompt('Cole o texto da reunião:'); if(!txt) return; document.getElementById('transcript-empty').style.display='none'; txt.split('\n').filter(l=>l.trim()).forEach((line,i)=>setTimeout(()=>addTranscriptLine(line),i*20)); transcriptLines=txt.split('\n').filter(l=>l.trim()).map((text,i)=>({id:'p'+i,time:'--:--',text})); }
+
+function pasteMode(){
+  const txt=prompt('Cole o texto da reunião:');
+  if(!txt) return;
+  showTransTextarea();
+  const ta=getTransText();
+  ta.value=txt;
+  transcriptLines=[{id:'full',time:'',text:txt}];
+  updateWordCount();
+}
 
 async function generateAI(){
-  if(!transcriptLines.length){ toast('Nenhum transcript disponível','error'); return; }
-  const fullText=transcriptLines.map(l=>l.text).join('\n');
+  const fullText=getTranscriptContent();
+  if(!fullText){ toast('Nenhum transcript disponível','error'); return; }
   const title=document.getElementById('meeting-title').value||'Reunião';
   const participants=document.getElementById('meeting-people').value||'time';
   const aiArea=document.getElementById('trans-ai-area');
