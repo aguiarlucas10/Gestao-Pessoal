@@ -1419,74 +1419,67 @@ async function addDemandsToBoard(){
 // ══════════════════════════════════════════════
 // 1:1
 // ══════════════════════════════════════════════
-// ── Persistence (Supabase + localStorage fallback) ──
-let _saveTimer=null;
-function saveOOState(){
-  // Save to localStorage immediately (fast)
+// ── Persistence (Supabase + localStorage) ──
+async function saveOOState(){
+  // localStorage (instant)
   localStorage.setItem('oo_people',JSON.stringify(PEOPLE));
   localStorage.setItem('oo_data',JSON.stringify(oo11));
-  // Debounce Supabase save (avoid spamming on rapid edits)
-  clearTimeout(_saveTimer);
-  _saveTimer=setTimeout(()=>saveOOToSupabase(),800);
-}
-
-async function saveOOToSupabase(){
+  // Supabase (immediate, no debounce)
   try {
     const { data:{ user } }=await sb.auth.getUser();
-    if(!user) return;
+    if(!user){ console.warn('saveOOState: no user'); return; }
     const { error }=await sb.from('cmd_user_settings').upsert({
       owner_id:user.id,
       people:PEOPLE,
       oo_data:oo11,
       updated_at:new Date().toISOString()
     },{onConflict:'owner_id'});
-    if(error) console.warn('Erro ao salvar settings:',error.message);
-  } catch(e){ console.warn('saveOOToSupabase error:',e); }
+    if(error){ console.error('saveOOState error:',error.message); toast('Erro ao salvar: '+error.message,'error'); }
+  } catch(e){ console.error('saveOOState catch:',e); }
 }
 
 async function loadOOState(){
-  let loaded=false;
-  // 1. Try loading from Supabase
+  // 1. Supabase
   try {
-    const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').single();
+    const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').maybeSingle();
+    console.log('loadOOState query result:', {data, error: error?.message});
     if(!error && data){
       if(data.people && Array.isArray(data.people) && data.people.length){
         PEOPLE=data.people;
       }
-      if(data.oo_data && typeof data.oo_data==='object'){
+      if(data.oo_data && typeof data.oo_data==='object' && Object.keys(data.oo_data).length){
         oo11=data.oo_data;
       }
-      loaded=true;
-      console.log('OO State loaded from Supabase:',PEOPLE.length,'people');
-    } else {
-      console.warn('loadOOState supabase:',error?.message||'no data');
+      PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
+      localStorage.setItem('oo_people',JSON.stringify(PEOPLE));
+      localStorage.setItem('oo_data',JSON.stringify(oo11));
+      renderOneOne();
+      console.log('Loaded from Supabase:',PEOPLE.map(p=>p.name).join(', '));
+      return;
     }
-  } catch(e){ console.warn('loadOOState supabase error:',e); }
-  // 2. Fallback to localStorage
-  if(!loaded){
-    try {
-      const sp=localStorage.getItem('oo_people');
-      if(sp){ const parsed=JSON.parse(sp); if(Array.isArray(parsed)&&parsed.length){ PEOPLE=parsed; loaded=true; } }
-      const sd=localStorage.getItem('oo_data');
-      if(sd){ const parsed=JSON.parse(sd); if(typeof parsed==='object'){ oo11=parsed; loaded=true; } }
-      if(loaded) console.log('OO State loaded from localStorage');
-    } catch(e){ console.warn('loadOOState localStorage error:',e); }
-  }
-  // 3. If nothing loaded, use defaults
-  if(!loaded){
-    PEOPLE=[...DEFAULT_PEOPLE];
-    console.log('OO State using defaults');
-  }
-  // 4. Ensure all people have oo11 entries
+  } catch(e){ console.error('loadOOState supabase catch:',e); }
+
+  // 2. localStorage fallback
+  try {
+    const sp=localStorage.getItem('oo_people');
+    const sd=localStorage.getItem('oo_data');
+    if(sp){
+      const parsed=JSON.parse(sp);
+      if(Array.isArray(parsed)&&parsed.length){ PEOPLE=parsed; }
+    }
+    if(sd){
+      const parsed=JSON.parse(sd);
+      if(typeof parsed==='object') oo11=parsed;
+    }
+  } catch(e){ console.error('loadOOState localStorage catch:',e); }
+
+  // 3. Defaults
+  if(!PEOPLE.length) PEOPLE=[...DEFAULT_PEOPLE];
   PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
-  // Sync to localStorage
-  localStorage.setItem('oo_people',JSON.stringify(PEOPLE));
-  localStorage.setItem('oo_data',JSON.stringify(oo11));
   renderOneOne();
-  // 5. If first time, save defaults to Supabase
-  if(!loaded){
-    try { await saveOOToSupabase(); } catch(e){}
-  }
+
+  // 4. First time — save to Supabase
+  await saveOOState();
 }
 
 // ── People management ──
