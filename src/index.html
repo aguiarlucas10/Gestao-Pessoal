@@ -1435,66 +1435,54 @@ async function addDemandsToBoard(){
 // ══════════════════════════════════════════════
 // 1:1
 // ══════════════════════════════════════════════
-// ── Persistence (Supabase + localStorage) ──
+// ── Persistence (Supabase is source of truth) ──
+const OO_VERSION='v2';
+
 async function saveOOState(){
-  // localStorage (instant)
+  localStorage.setItem('oo_ver',OO_VERSION);
   localStorage.setItem('oo_people',JSON.stringify(PEOPLE));
   localStorage.setItem('oo_data',JSON.stringify(oo11));
-  // Supabase (immediate, no debounce)
   try {
     const { data:{ user } }=await sb.auth.getUser();
-    if(!user){ console.warn('saveOOState: no user'); return; }
+    if(!user) return;
     const { error }=await sb.from('cmd_user_settings').upsert({
       owner_id:user.id,
       people:PEOPLE,
       oo_data:oo11,
       updated_at:new Date().toISOString()
     },{onConflict:'owner_id'});
-    if(error){ console.error('saveOOState error:',error.message); toast('Erro ao salvar: '+error.message,'error'); }
+    if(error) console.error('saveOOState error:',error.message);
   } catch(e){ console.error('saveOOState catch:',e); }
 }
 
 async function loadOOState(){
-  // 1. Supabase
+  // Clear stale localStorage from older versions
+  if(localStorage.getItem('oo_ver')!==OO_VERSION){
+    localStorage.removeItem('oo_people');
+    localStorage.removeItem('oo_data');
+    localStorage.removeItem('oo_ver');
+  }
+
+  // 1. Supabase (source of truth)
   try {
     const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').maybeSingle();
-    console.log('loadOOState query result:', {data, error: error?.message});
     if(!error && data){
-      if(data.people && Array.isArray(data.people) && data.people.length){
-        PEOPLE=data.people;
-      }
-      if(data.oo_data && typeof data.oo_data==='object' && Object.keys(data.oo_data).length){
-        oo11=data.oo_data;
-      }
+      if(data.people && Array.isArray(data.people) && data.people.length) PEOPLE=data.people;
+      if(data.oo_data && typeof data.oo_data==='object' && Object.keys(data.oo_data).length) oo11=data.oo_data;
       PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
+      localStorage.setItem('oo_ver',OO_VERSION);
       localStorage.setItem('oo_people',JSON.stringify(PEOPLE));
       localStorage.setItem('oo_data',JSON.stringify(oo11));
       renderOneOne();
-      console.log('Loaded from Supabase:',PEOPLE.map(p=>p.name).join(', '));
       return;
     }
-  } catch(e){ console.error('loadOOState supabase catch:',e); }
+  } catch(e){ console.error('loadOOState supabase:',e); }
 
-  // 2. localStorage fallback
-  try {
-    const sp=localStorage.getItem('oo_people');
-    const sd=localStorage.getItem('oo_data');
-    if(sp){
-      const parsed=JSON.parse(sp);
-      if(Array.isArray(parsed)&&parsed.length){ PEOPLE=parsed; }
-    }
-    if(sd){
-      const parsed=JSON.parse(sd);
-      if(typeof parsed==='object') oo11=parsed;
-    }
-  } catch(e){ console.error('loadOOState localStorage catch:',e); }
-
-  // 3. Defaults
-  if(!PEOPLE.length) PEOPLE=[...DEFAULT_PEOPLE];
-  PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
+  // 2. Defaults (skip stale localStorage entirely)
+  PEOPLE=[...DEFAULT_PEOPLE];
+  oo11={};
+  PEOPLE.forEach(p=>{ oo11[p.id]={topics:[],actions:[],notes:''}; });
   renderOneOne();
-
-  // 4. First time — save to Supabase
   await saveOOState();
 }
 
