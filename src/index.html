@@ -600,8 +600,8 @@ select.modal-input{cursor:pointer}
             <div class="transcript-area" id="transcript-area">
               <div class="transcript-empty" id="transcript-empty">
                 <div class="ei">🎙️</div>
-                <p>Clique em <strong>Iniciar Gravação</strong> para começar a transcrição em tempo real.</p>
-                <p style="font-size:11px;color:var(--t4);margin-top:4px">O áudio é processado via Supabase Edge Function (OpenAI Whisper). Sua chave de API nunca é exposta.</p>
+                <p>Clique em <strong>Iniciar Gravação</strong> para transcrição em tempo real.</p>
+                <p style="font-size:11px;color:var(--t4);margin-top:4px">O texto aparece instantaneamente enquanto você fala. Use "Refinar (Whisper)" para melhorar a precisão.</p>
               </div>
             </div>
           </div>
@@ -616,6 +616,7 @@ select.modal-input{cursor:pointer}
             <div class="trans-actions">
               <button class="btn-sm" onclick="clearTranscript()">Limpar</button>
               <button class="btn-sm" onclick="pasteMode()">✎ Colar texto</button>
+              <button class="btn-sm" onclick="refineWithWhisper()">🔄 Refinar (Whisper)</button>
               <button class="btn-sm primary" onclick="addDemandsToBoard()">→ Enviar ao Board</button>
             </div>
           </div>
@@ -1214,26 +1215,77 @@ async function addTask(){
 // ══════════════════════════════════════════════
 // TRANSCRIPTION (via Edge Function — sem key exposta)
 // ══════════════════════════════════════════════
-let recStream2=null;
+let recStream2=null, speechRec=null, isRecording=false, interimLineId=null;
 
 async function toggleRecording(){
   const btn=document.getElementById('rec-btn');
-  if(!mediaRecorder || mediaRecorder.state==='inactive'){
+  if(!isRecording){
     try {
+      // Start real-time speech recognition
+      const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+      if(!SpeechRecognition){ toast('Navegador não suporta transcrição em tempo real. Use Chrome ou Edge.','error'); return; }
+      speechRec=new SpeechRecognition();
+      speechRec.continuous=true;
+      speechRec.interimResults=true;
+      speechRec.lang='pt-BR';
+      speechRec.maxAlternatives=1;
+
+      speechRec.onresult=(e)=>{
+        let interim='', finalText='';
+        for(let i=e.resultIndex;i<e.results.length;i++){
+          const t=e.results[i][0].transcript;
+          if(e.results[i].isFinal){ finalText+=t; }
+          else { interim+=t; }
+        }
+        // Show final results as permanent lines
+        if(finalText.trim()){
+          if(interimLineId){ removeTranscriptLine(interimLineId); interimLineId=null; }
+          addTranscriptLine(finalText.trim());
+        }
+        // Show interim results as partial (typing indicator)
+        if(interim.trim()){
+          if(interimLineId){
+            updateTranscriptLine(interimLineId, interim.trim(), true);
+          } else {
+            interimLineId=addTranscriptLine(interim.trim(), true);
+          }
+        }
+      };
+
+      speechRec.onerror=(e)=>{
+        if(e.error==='no-speech') return; // normal, just silence
+        if(e.error==='aborted') return;
+        toast('Erro no reconhecimento: '+e.error,'error');
+      };
+
+      // Auto-restart if recognition ends while still recording
+      speechRec.onend=()=>{
+        if(isRecording){
+          try { speechRec.start(); } catch(ex){}
+        }
+      };
+
+      speechRec.start();
+      isRecording=true;
+
+      // Also start audio recording for Whisper refinement if needed
       recStream2=await navigator.mediaDevices.getUserMedia({audio:true});
-      startRec(recStream2);
+      startAudioCapture(recStream2);
+
       btn.className='rec-btn recording';
       document.getElementById('rec-label').textContent='Parar Gravação';
       document.getElementById('rec-timer').style.display='block';
       startTimer();
-      toast('Gravação iniciada');
-    } catch(e){ toast('Microfone bloqueado: '+e.message,'error'); }
+      document.getElementById('transcript-empty').style.display='none';
+      toast('Transcrição em tempo real iniciada');
+    } catch(e){ toast('Erro: '+e.message,'error'); }
   } else {
     stopRec();
     btn.className='rec-btn idle';
     document.getElementById('rec-label').textContent='Iniciar Gravação';
     clearInterval(recInterval);
-    toast('Gravação pausada');
+    if(interimLineId){ removeTranscriptLine(interimLineId); interimLineId=null; }
+    toast('Gravação finalizada');
   }
 }
 
@@ -1247,27 +1299,31 @@ function startTimer(){
   },1000);
 }
 
-function startRec(stream){
+// Audio capture (keeps recording for potential Whisper refinement)
+let audioChunks=[];
+function startAudioCapture(stream){
   const mt=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
   mediaRecorder=new MediaRecorder(stream,{mimeType:mt});
-  let chunks=[];
-  mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) chunks.push(e.data); };
-  mediaRecorder.onstop=async()=>{
-    const blob=new Blob(chunks,{type:mt}); chunks=[];
-    if(blob.size>1000) await sendChunk(blob);
-    if(mediaRecorder&&recStream2) { mediaRecorder.start(5000); }
-  };
-  mediaRecorder.start(5000);
+  audioChunks=[];
+  mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) audioChunks.push(e.data); };
+  mediaRecorder.start(10000);
 }
 
 function stopRec(){
+  isRecording=false;
+  if(speechRec){ try{ speechRec.stop(); }catch(ex){} speechRec=null; }
   if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
   if(recStream2){ recStream2.getTracks().forEach(t=>t.stop()); recStream2=null; }
   mediaRecorder=null;
 }
 
-async function sendChunk(blob){
-  const partial=addTranscriptLine('...', true);
+// Whisper refinement — sends recorded audio to get higher quality transcript
+async function refineWithWhisper(){
+  if(!audioChunks.length){ toast('Nenhum áudio gravado para refinar','error'); return; }
+  const mt=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
+  const blob=new Blob(audioChunks,{type:mt});
+  if(blob.size<1000){ toast('Áudio muito curto','error'); return; }
+  const partial=addTranscriptLine('Refinando com Whisper...', true);
   try {
     const { data:{ session } }=await sb.auth.getSession();
     const fd=new FormData(); fd.append('file',blob,'audio.webm');
@@ -1277,9 +1333,16 @@ async function sendChunk(blob){
       body:fd
     });
     const data=await res.json();
-    if(data.text?.trim()) updateTranscriptLine(partial,data.text.trim());
-    else removeTranscriptLine(partial);
-  } catch(e){ removeTranscriptLine(partial); }
+    if(data.text?.trim()){
+      removeTranscriptLine(partial);
+      // Replace all transcript with Whisper version
+      const area=document.getElementById('transcript-area');
+      area.innerHTML='';
+      transcriptLines=[];
+      data.text.trim().split(/[.!?]+/).filter(s=>s.trim()).forEach(s=>addTranscriptLine(s.trim()+'.'));
+      toast('Transcript refinado com Whisper');
+    } else { removeTranscriptLine(partial); toast('Whisper não retornou texto','error'); }
+  } catch(e){ removeTranscriptLine(partial); toast('Erro ao refinar: '+e.message,'error'); }
 }
 
 function addTranscriptLine(text, partial=false){
@@ -1294,7 +1357,7 @@ function addTranscriptLine(text, partial=false){
   transcriptLines.push({id,time,text});
   return id;
 }
-function updateTranscriptLine(id,text){ const el=document.getElementById(id); if(!el)return; el.querySelector('.trans-line-text').textContent=text; el.querySelector('.trans-line-text').classList.remove('partial'); const tl=transcriptLines.find(l=>l.id===id); if(tl) tl.text=text; }
+function updateTranscriptLine(id,text,keepPartial=false){ const el=document.getElementById(id); if(!el)return; el.querySelector('.trans-line-text').textContent=text; if(!keepPartial) el.querySelector('.trans-line-text').classList.remove('partial'); const tl=transcriptLines.find(l=>l.id===id); if(tl) tl.text=text; const area=document.getElementById('transcript-area'); area.scrollTop=area.scrollHeight; }
 function removeTranscriptLine(id){ const el=document.getElementById(id); if(el) el.remove(); transcriptLines=transcriptLines.filter(l=>l.id!==id); }
 function clearTranscript(){ document.getElementById('transcript-area').innerHTML=`<div class="transcript-empty" id="transcript-empty"><div class="ei">🎙️</div><p>Clique em <strong>Iniciar Gravação</strong> para começar.</p></div>`; transcriptLines=[]; aiDemands=[]; document.getElementById('trans-ai-area').innerHTML=`<div style="color:var(--t4);font-size:12px;line-height:1.7">Após gravar, clique em <strong style="color:var(--t2)">Gerar com IA</strong>.</div>`; }
 function pasteMode(){ const txt=prompt('Cole o texto da reunião:'); if(!txt) return; document.getElementById('transcript-empty').style.display='none'; txt.split('\n').filter(l=>l.trim()).forEach((line,i)=>setTimeout(()=>addTranscriptLine(line),i*20)); transcriptLines=txt.split('\n').filter(l=>l.trim()).map((text,i)=>({id:'p'+i,time:'--:--',text})); }
