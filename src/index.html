@@ -713,7 +713,7 @@ const sb = createClient(SB_URL, SB_ANON);
 // ══════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════
-let PEOPLE = [
+const DEFAULT_PEOPLE = [
   { id:'lucas',    name:'Lucas',    init:'L',  role:'Diretor Comercial',       color:'#4f7cff', bg:'rgba(79,124,255,.2)', hidden:false },
   { id:'rafa',     name:'Rafa',     init:'R',  role:'Site / CRM / Promoções',  color:'#2dce89', bg:'rgba(45,206,137,.2)', hidden:false },
   { id:'edu',      name:'Edu',      init:'E',  role:'Marketplace (Elevate)',   color:'#ff8c42', bg:'rgba(255,140,66,.2)', hidden:false },
@@ -721,6 +721,7 @@ let PEOPLE = [
   { id:'catarina', name:'Catarina', init:'C',  role:'Diretora de Operações',   color:'#ff4d6d', bg:'rgba(255,77,109,.2)', hidden:false },
   { id:'junior',   name:'Junior',   init:'JR', role:'Founder / Owner',         color:'#ffd166', bg:'rgba(255,209,102,.2)', hidden:false },
 ];
+let PEOPLE = [...DEFAULT_PEOPLE];
 let ooShowHidden=false, ooDragIdx=null;
 
 const today = new Date();
@@ -782,6 +783,7 @@ async function doLogout(){
   await sb.auth.signOut();
 }
 
+let _authLoaded=false;
 sb.auth.onAuthStateChange(async(event, session)=>{
   if(session){
     document.getElementById('auth-screen').style.display='none';
@@ -789,10 +791,14 @@ sb.auth.onAuthStateChange(async(event, session)=>{
     const email=session.user.email;
     document.getElementById('user-email').textContent=email;
     document.getElementById('user-av').textContent=email[0].toUpperCase();
-    await loadTasks();
-    await loadOOState();
-    scheduleNotifCheck();
+    if(!_authLoaded){
+      _authLoaded=true;
+      await loadTasks();
+      await loadOOState();
+      scheduleNotifCheck();
+    }
   } else {
+    _authLoaded=false;
     document.getElementById('auth-screen').style.display='flex';
     document.getElementById('shell').style.display='none';
     tasks=[];
@@ -1442,32 +1448,42 @@ async function loadOOState(){
   let loaded=false;
   // 1. Try loading from Supabase
   try {
-    const { data:{ session } }=await sb.auth.getSession();
-    if(session){
-      const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').single();
-      if(!error && data){
-        if(data.people && data.people.length) PEOPLE=data.people;
-        if(data.oo_data) oo11=data.oo_data;
-        loaded=true;
+    const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').single();
+    if(!error && data){
+      if(data.people && Array.isArray(data.people) && data.people.length){
+        PEOPLE=data.people;
       }
+      if(data.oo_data && typeof data.oo_data==='object'){
+        oo11=data.oo_data;
+      }
+      loaded=true;
+      console.log('OO State loaded from Supabase:',PEOPLE.length,'people');
+    } else {
+      console.warn('loadOOState supabase:',error?.message||'no data');
     }
   } catch(e){ console.warn('loadOOState supabase error:',e); }
   // 2. Fallback to localStorage
   if(!loaded){
     try {
       const sp=localStorage.getItem('oo_people');
-      if(sp){ PEOPLE=JSON.parse(sp); loaded=true; }
+      if(sp){ const parsed=JSON.parse(sp); if(Array.isArray(parsed)&&parsed.length){ PEOPLE=parsed; loaded=true; } }
       const sd=localStorage.getItem('oo_data');
-      if(sd){ oo11=JSON.parse(sd); loaded=true; }
+      if(sd){ const parsed=JSON.parse(sd); if(typeof parsed==='object'){ oo11=parsed; loaded=true; } }
+      if(loaded) console.log('OO State loaded from localStorage');
     } catch(e){ console.warn('loadOOState localStorage error:',e); }
   }
-  // 3. Ensure all people have oo11 entries
+  // 3. If nothing loaded, use defaults
+  if(!loaded){
+    PEOPLE=[...DEFAULT_PEOPLE];
+    console.log('OO State using defaults');
+  }
+  // 4. Ensure all people have oo11 entries
   PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
   // Sync to localStorage
   localStorage.setItem('oo_people',JSON.stringify(PEOPLE));
   localStorage.setItem('oo_data',JSON.stringify(oo11));
   renderOneOne();
-  // 4. If first time (no data in Supabase), save defaults
+  // 5. If first time, save defaults to Supabase
   if(!loaded){
     try { await saveOOToSupabase(); } catch(e){}
   }
