@@ -1274,7 +1274,7 @@ async function toggleRecording(){
       };
 
       speechRec.onerror=(e)=>{
-        if(e.error==='no-speech'||e.error==='aborted') return;
+        if(e.error==='no-speech'||e.error==='aborted'||e.error==='audio-capture') return;
         toast('Erro no reconhecimento: '+e.error,'error');
       };
 
@@ -1282,16 +1282,16 @@ async function toggleRecording(){
         if(isRecording){ try{ speechRec.start(); }catch(ex){} }
       };
 
-      speechRec.start();
-      isRecording=true;
-
-      // Audio capture for Whisper
+      // Capture mic FIRST, then start speech recognition
       recStream2=await navigator.mediaDevices.getUserMedia({audio:true});
       const mt=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
       mediaRecorder=new MediaRecorder(recStream2,{mimeType:mt});
       audioChunks=[];
       mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) audioChunks.push(e.data); };
       mediaRecorder.start(10000);
+
+      speechRec.start();
+      isRecording=true;
 
       showTransTextarea();
       btn.className='rec-btn recording';
