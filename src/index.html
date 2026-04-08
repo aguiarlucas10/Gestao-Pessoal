@@ -1452,50 +1452,70 @@ async function addDemandsToBoard(){
 // ══════════════════════════════════════════════
 // 1:1
 // ══════════════════════════════════════════════
-// ── Persistence (Supabase is source of truth) ──
-const OO_VERSION='v2';
+// ── Persistence (Supabase + localStorage cache) ──
+const OO_VERSION='v3';
 
-async function saveOOState(){
+function saveOOLocal(){
   localStorage.setItem('oo_ver',OO_VERSION);
   localStorage.setItem('oo_people',JSON.stringify(PEOPLE));
   localStorage.setItem('oo_data',JSON.stringify(oo11));
+}
+
+async function saveOOState(){
+  saveOOLocal();
   try {
     const { data:{ user } }=await sb.auth.getUser();
     if(!user) return;
-    const { error }=await sb.from('cmd_user_settings').upsert({
+    await sb.from('cmd_user_settings').upsert({
       owner_id:user.id,
       people:PEOPLE,
       oo_data:oo11,
       updated_at:new Date().toISOString()
     },{onConflict:'owner_id'});
-    if(error) console.error('saveOOState error:',error.message);
-  } catch(e){ console.error('saveOOState catch:',e); }
+  } catch(e){ console.error('saveOOState:',e); }
+}
+
+function loadOOFromLocal(){
+  if(localStorage.getItem('oo_ver')!==OO_VERSION) return false;
+  try {
+    const sp=localStorage.getItem('oo_people');
+    const sd=localStorage.getItem('oo_data');
+    if(!sp) return false;
+    const pp=JSON.parse(sp);
+    if(!Array.isArray(pp)||!pp.length) return false;
+    PEOPLE=pp;
+    if(sd){ const dd=JSON.parse(sd); if(typeof dd==='object') oo11=dd; }
+    return true;
+  } catch(e){ return false; }
 }
 
 async function loadOOState(){
-  // Clear stale localStorage from older versions
-  if(localStorage.getItem('oo_ver')!==OO_VERSION){
-    localStorage.removeItem('oo_people');
-    localStorage.removeItem('oo_data');
-    localStorage.removeItem('oo_ver');
+  let loaded=false;
+
+  // 1. localStorage first (instant, avoids flash of defaults)
+  loaded=loadOOFromLocal();
+  if(loaded){
+    PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
+    renderOneOne();
   }
 
-  // 1. Supabase (source of truth)
+  // 2. Supabase (source of truth, may override localStorage)
   try {
     const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').maybeSingle();
     if(!error && data){
       if(data.people && Array.isArray(data.people) && data.people.length) PEOPLE=data.people;
       if(data.oo_data && typeof data.oo_data==='object' && Object.keys(data.oo_data).length) oo11=data.oo_data;
       PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
-      localStorage.setItem('oo_ver',OO_VERSION);
-      localStorage.setItem('oo_people',JSON.stringify(PEOPLE));
-      localStorage.setItem('oo_data',JSON.stringify(oo11));
+      saveOOLocal();
       renderOneOne();
       return;
     }
   } catch(e){ console.error('loadOOState supabase:',e); }
 
-  // 2. Defaults (skip stale localStorage entirely)
+  // 3. If Supabase had nothing but localStorage loaded, keep it
+  if(loaded) return;
+
+  // 4. First time ever — use defaults and save
   PEOPLE=[...DEFAULT_PEOPLE];
   oo11={};
   PEOPLE.forEach(p=>{ oo11[p.id]={topics:[],actions:[],notes:''}; });
@@ -1661,15 +1681,17 @@ function renderOOActions(pid){
     </div>`).join('');
 }
 
-function toggleOOAct(pid,i){ oo11[pid].actions[i].done=!oo11[pid].actions[i].done; saveOOState(); const el=document.getElementById(`oo-act-${pid}`); if(el){ el.innerHTML=`<div class="oo-section-head"><div class="oo-section-title">⚡ Action Items</div></div>${renderOOActions(pid)}`; } renderOneOne(); }
-function addOOAction(pid){ const txt=prompt('Novo action item:'); if(!txt) return; const prio=prompt('Prioridade (alta/media/baixa):','media')||'media'; oo11[pid].actions.push({text:txt,done:false,prio}); saveOOState(); selectOO(pid); }
-function addOOTopic(pid){ const txt=prompt('Novo tópico de pauta:'); if(!txt) return; oo11[pid].topics.push(txt); saveOOState(); selectOO(pid); }
+function ooData(pid){ if(!oo11[pid]) oo11[pid]={topics:[],actions:[],notes:''}; return oo11[pid]; }
+
+function toggleOOAct(pid,i){ const d=ooData(pid); d.actions[i].done=!d.actions[i].done; saveOOState(); const el=document.getElementById(`oo-act-${pid}`); if(el){ el.innerHTML=`<div class="oo-section-head"><div class="oo-section-title">⚡ Action Items</div></div>${renderOOActions(pid)}`; } renderOneOne(); }
+function addOOAction(pid){ const txt=prompt('Novo action item:'); if(!txt) return; const prio=prompt('Prioridade (alta/media/baixa):','media')||'media'; ooData(pid).actions.push({text:txt,done:false,prio}); saveOOState(); selectOO(pid); }
+function addOOTopic(pid){ const txt=prompt('Novo tópico de pauta:'); if(!txt) return; ooData(pid).topics.push(txt); saveOOState(); selectOO(pid); }
 
 // ── Edit / Delete topics & actions ──
-function editOOTopic(pid,i){ const txt=prompt('Editar tópico:',oo11[pid].topics[i]); if(txt===null) return; oo11[pid].topics[i]=txt; saveOOState(); selectOO(pid); }
-function delOOTopic(pid,i){ if(!confirm('Excluir este tópico?')) return; oo11[pid].topics.splice(i,1); saveOOState(); selectOO(pid); toast('Tópico excluído'); }
-function editOOAction(pid,i){ const a=oo11[pid].actions[i]; const txt=prompt('Editar action item:',a.text); if(txt===null) return; a.text=txt; const prio=prompt('Prioridade (alta/media/baixa):',a.prio); if(prio) a.prio=prio; saveOOState(); selectOO(pid); }
-function delOOAction(pid,i){ if(!confirm('Excluir este action item?')) return; oo11[pid].actions.splice(i,1); saveOOState(); selectOO(pid); renderOneOne(); toast('Action item excluído'); }
+function editOOTopic(pid,i){ const d=ooData(pid); const txt=prompt('Editar tópico:',d.topics[i]); if(txt===null) return; d.topics[i]=txt; saveOOState(); selectOO(pid); }
+function delOOTopic(pid,i){ if(!confirm('Excluir este tópico?')) return; ooData(pid).topics.splice(i,1); saveOOState(); selectOO(pid); toast('Tópico excluído'); }
+function editOOAction(pid,i){ const a=ooData(pid).actions[i]; if(!a) return; const txt=prompt('Editar action item:',a.text); if(txt===null) return; a.text=txt; const prio=prompt('Prioridade (alta/media/baixa):',a.prio); if(prio) a.prio=prio; saveOOState(); selectOO(pid); }
+function delOOAction(pid,i){ if(!confirm('Excluir este action item?')) return; ooData(pid).actions.splice(i,1); saveOOState(); selectOO(pid); renderOneOne(); toast('Action item excluído'); }
 
 // ══════════════════════════════════════════════
 // INIT
