@@ -810,7 +810,7 @@ sb.auth.onAuthStateChange(async(event, session)=>{
 // SUPABASE CRUD
 // ══════════════════════════════════════════════
 async function loadTasks(){
-  const { data, error }=await sb.from('tasks').select('*').order('created_at',{ascending:false});
+  const { data, error }=await sb.from('cmd_tasks').select('*').order('created_at',{ascending:false});
   if(error){ toast('Erro ao carregar: '+error.message,'error'); return; }
   tasks=(data||[]).map(dbToTask);
   renderBoard(); renderCal(); renderPeople();
@@ -825,24 +825,24 @@ function dbToTask(r){
 async function sbUpsert(t){
   const { data: { user } }=await sb.auth.getUser();
   const row={ id:String(t.id), title:t.title, person:t.person, due_date:t.dueDate||null, priority:t.priority, tipo:t.tipo, context:t.context||'', done:t.done, notes:t.notes||'', owner_id:user.id };
-  const { error }=await sb.from('tasks').upsert(row,{onConflict:'id'});
+  const { error }=await sb.from('cmd_tasks').upsert(row,{onConflict:'id'});
   if(error) toast('Erro ao salvar: '+error.message,'error');
 }
 
 async function sbDelete(id){
-  const { error }=await sb.from('tasks').delete().eq('id',String(id));
+  const { error }=await sb.from('cmd_tasks').delete().eq('id',String(id));
   if(error) toast('Erro ao excluir: '+error.message,'error');
 }
 
 async function saveMeeting(title, participants, date, transcript, ata, demands){
   const { data: { user } }=await sb.auth.getUser();
-  const { data: meeting, error }=await sb.from('meetings').insert({
+  const { data: meeting, error }=await sb.from('cmd_meetings').insert({
     title, participants, meeting_date:date||isoToday, transcript, ata, owner_id:user.id
   }).select().single();
   if(error){ toast('Erro ao salvar reunião','error'); return null; }
   if(demands?.length && meeting){
     const rows=demands.map(d=>({ meeting_id:meeting.id, task_id:null, title:d.titulo, person:d.responsavel||'lucas', priority:d.prioridade||'media', tipo:d.tipo||'delegada', owner_id:user.id }));
-    await sb.from('meeting_demands').insert(rows);
+    await sb.from('cmd_meeting_demands').insert(rows);
   }
   return meeting;
 }
@@ -1435,7 +1435,7 @@ async function saveOOToSupabase(){
   try {
     const { data:{ user } }=await sb.auth.getUser();
     if(!user) return;
-    const { error }=await sb.from('user_settings').upsert({
+    const { error }=await sb.from('cmd_user_settings').upsert({
       owner_id:user.id,
       people:PEOPLE,
       oo_data:oo11,
@@ -1450,7 +1450,7 @@ async function loadOOState(){
   try {
     const { data:{ session } }=await sb.auth.getSession();
     if(session){
-      const { data,error }=await sb.from('user_settings').select('people,oo_data').single();
+      const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').single();
       if(!error && data){
         if(data.people && data.people.length) PEOPLE=data.people;
         if(data.oo_data){
