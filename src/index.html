@@ -796,6 +796,8 @@ sb.auth.onAuthStateChange(async(event, session)=>{
     document.getElementById('user-email').textContent=email;
     document.getElementById('user-av').textContent=email[0].toUpperCase();
     await loadTasks();
+    await loadOOState();
+    renderOneOne();
     scheduleNotifCheck();
   } else {
     document.getElementById('auth-screen').style.display='flex';
@@ -1418,12 +1420,52 @@ async function addDemandsToBoard(){
 // ══════════════════════════════════════════════
 // 1:1
 // ══════════════════════════════════════════════
-// ── Persistence (localStorage) ──
+// ── Persistence (Supabase + localStorage fallback) ──
+let _saveTimer=null;
 function saveOOState(){
+  // Save to localStorage immediately (fast)
   localStorage.setItem('oo_people',JSON.stringify(PEOPLE));
   localStorage.setItem('oo_data',JSON.stringify(oo11));
+  // Debounce Supabase save (avoid spamming on rapid edits)
+  clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(()=>saveOOToSupabase(),800);
 }
-function loadOOState(){
+
+async function saveOOToSupabase(){
+  try {
+    const { data:{ user } }=await sb.auth.getUser();
+    if(!user) return;
+    const { error }=await sb.from('user_settings').upsert({
+      owner_id:user.id,
+      people:PEOPLE,
+      oo_data:oo11,
+      updated_at:new Date().toISOString()
+    },{onConflict:'owner_id'});
+    if(error) console.warn('Erro ao salvar settings:',error.message);
+  } catch(e){ console.warn('saveOOToSupabase error:',e); }
+}
+
+async function loadOOState(){
+  // 1. Try loading from Supabase first
+  try {
+    const { data:{ session } }=await sb.auth.getSession();
+    if(session){
+      const { data,error }=await sb.from('user_settings').select('people,oo_data').single();
+      if(!error && data){
+        if(data.people && data.people.length) PEOPLE=data.people;
+        if(data.oo_data){
+          Object.keys(data.oo_data).forEach(k=>{ oo11[k]=data.oo_data[k]; });
+        }
+        PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
+        // Sync to localStorage
+        localStorage.setItem('oo_people',JSON.stringify(PEOPLE));
+        localStorage.setItem('oo_data',JSON.stringify(oo11));
+        renderOneOne();
+        return;
+      }
+    }
+  } catch(e){ console.warn('loadOOState supabase error:',e); }
+  // 2. Fallback to localStorage
   try {
     const sp=localStorage.getItem('oo_people');
     if(sp){ PEOPLE=JSON.parse(sp); }
@@ -1432,9 +1474,8 @@ function loadOOState(){
       const loaded=JSON.parse(sd);
       Object.keys(loaded).forEach(k=>{ oo11[k]=loaded[k]; });
     }
-    // Ensure all people have oo11 entries
     PEOPLE.forEach(p=>{ if(!oo11[p.id]) oo11[p.id]={topics:[],actions:[],notes:''}; });
-  } catch(e){ console.warn('Erro ao carregar estado 1:1',e); }
+  } catch(e){ console.warn('loadOOState localStorage error:',e); }
 }
 
 // ── People management ──
