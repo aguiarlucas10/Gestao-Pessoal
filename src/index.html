@@ -787,7 +787,20 @@ async function doLogin(){
 }
 
 async function doLogout(){
-  await sb.auth.signOut();
+  try {
+    await sb.auth.signOut();
+    // Reset state
+    _authLoaded=false;
+    tasks=[];
+    PEOPLE=[...DEFAULT_PEOPLE];
+    oo11={};
+    ooSelected=null;
+    localStorage.removeItem('oo_ver');
+    localStorage.removeItem('oo_people');
+    localStorage.removeItem('oo_data');
+    document.getElementById('shell').style.display='none';
+    document.getElementById('auth-screen').style.display='flex';
+  } catch(e){ console.error('Logout error:',e); location.reload(); }
 }
 
 let _authLoaded=false;
