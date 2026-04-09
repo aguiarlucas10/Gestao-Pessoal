@@ -404,6 +404,29 @@ body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--t1)}
 .sp-del{padding:8px;border-radius:7px;width:100%;border:1px solid rgba(255,77,109,.2);background:transparent;color:var(--red);font-size:11px;font-weight:600;font-family:'Geist',sans-serif;cursor:pointer;transition:all .15s}
 .sp-del:hover{background:var(--red2)}
 
+/* ── MORNING BRIEFING ── */
+.briefing-overlay{position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(16px);z-index:400;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:all .25s}
+.briefing-overlay.open{opacity:1;pointer-events:all}
+.briefing{background:var(--s1);border:1px solid var(--b2);border-radius:18px;width:560px;max-width:92vw;max-height:85vh;display:flex;flex-direction:column;transform:scale(.95);transition:all .25s;box-shadow:0 32px 100px rgba(0,0,0,.8);overflow:hidden}
+.briefing-overlay.open .briefing{transform:scale(1)}
+.briefing-header{padding:24px 28px 0;display:flex;align-items:center;justify-content:space-between}
+.briefing-title{font-family:'Instrument Serif',serif;font-size:22px}
+.briefing-date{font-family:'Geist Mono',monospace;font-size:11px;color:var(--t3)}
+.briefing-body{flex:1;overflow-y:auto;padding:20px 28px 24px;display:flex;flex-direction:column;gap:18px}
+.briefing-body::-webkit-scrollbar{width:4px}
+.briefing-body::-webkit-scrollbar-thumb{background:var(--b2);border-radius:99px}
+.briefing-section{display:flex;flex-direction:column;gap:8px}
+.briefing-section-title{font-family:'Geist Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);display:flex;align-items:center;gap:6px}
+.briefing-count{background:var(--s3);color:var(--t2);padding:1px 7px;border-radius:99px;font-size:9px}
+.briefing-item{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;font-size:12px;color:var(--t1);line-height:1.5}
+.briefing-item.overdue{border-left:3px solid var(--red)}
+.briefing-item.today{border-left:3px solid var(--org)}
+.briefing-item.upcoming{border-left:3px solid var(--acc)}
+.briefing-item.followup{border-left:3px solid var(--yel)}
+.briefing-item-meta{font-size:10px;color:var(--t3);margin-top:2px}
+.briefing-empty{font-size:12px;color:var(--t4);padding:4px 0}
+.briefing-footer{padding:16px 28px;border-top:1px solid var(--b1);display:flex;justify-content:flex-end}
+
 /* ── MODALS ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(12px);z-index:300;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:all .2s}
 .modal-overlay.open{opacity:1;pointer-events:all}
@@ -702,6 +725,20 @@ select.modal-input{cursor:pointer}
   </div>
 </div>
 
+<!-- MORNING BRIEFING -->
+<div class="briefing-overlay" id="briefing-overlay" onclick="if(event.target===this)closeBriefing()">
+  <div class="briefing">
+    <div class="briefing-header">
+      <div><div class="briefing-title">Bom dia, Lucas</div><div class="briefing-date" id="briefing-date"></div></div>
+      <button class="sp-close" onclick="closeBriefing()">✕</button>
+    </div>
+    <div class="briefing-body" id="briefing-body"></div>
+    <div class="briefing-footer">
+      <button class="btn-sm primary" onclick="closeBriefing()" style="padding:8px 24px">Começar o dia</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast-wrap" id="toast-wrap"></div>
 
 <script>
@@ -820,11 +857,13 @@ sb.auth.onAuthStateChange(async(event, session)=>{
     if(lb){ lb.disabled=false; lb.textContent='Entrar'; }
     if(!_authLoaded){
       _authLoaded=true;
-      // Ensure session is propagated to the client before queries
-      await sb.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
+      // Verify session is ready before making queries
+      const { data:{ session:s } }=await sb.auth.getSession();
+      if(!s){ _authLoaded=false; return; }
       await loadTasks();
       await loadOOState();
       scheduleNotifCheck();
+      showBriefing();
     }
   } else {
     _authLoaded=false;
@@ -898,7 +937,80 @@ function checkNotifications(){
 
 function scheduleNotifCheck(){
   checkNotifications();
-  setInterval(checkNotifications, 5*60*1000); // a cada 5 min
+  setInterval(checkNotifications, 5*60*1000);
+}
+
+// ══════════════════════════════════════════════
+// MORNING BRIEFING
+// ══════════════════════════════════════════════
+function showBriefing(){
+  const overdue=tasks.filter(t=>!t.done && isOverdue(t.dueDate));
+  const todayTasks=tasks.filter(t=>!t.done && isToday(t.dueDate));
+  const upcoming=tasks.filter(t=>{
+    if(!t.dueDate||t.done) return false;
+    const d=new Date(t.dueDate+'T12:00:00');
+    const diff=(d-today)/(1000*60*60*24);
+    return diff>0 && diff<=3;
+  });
+  const followups=tasks.filter(t=>{
+    if(t.done||t.tipo!=='delegada') return false;
+    // tasks without due date or old ones
+    return true;
+  }).filter(t=>{
+    const created=t._created||t.dueDate||isoToday;
+    const days=Math.floor((today-new Date(created+'T12:00:00'))/(1000*60*60*24));
+    return days>=2;
+  });
+
+  document.getElementById('briefing-date').textContent=today.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).toUpperCase();
+
+  let html='';
+
+  // Overdue
+  html+=`<div class="briefing-section"><div class="briefing-section-title">🔴 Atrasadas <span class="briefing-count">${overdue.length}</span></div>`;
+  if(overdue.length) overdue.slice(0,5).forEach(t=>{
+    const p=person(t.person);
+    html+=`<div class="briefing-item overdue"><div style="flex:1"><div>${t.title}</div><div class="briefing-item-meta">${p.name} · ${formatDate(t.dueDate)} · <span class="tag ${t.priority}" style="font-size:9px">${t.priority.toUpperCase()}</span></div></div></div>`;
+  });
+  else html+=`<div class="briefing-empty">Nenhuma tarefa atrasada</div>`;
+  html+=`</div>`;
+
+  // Today
+  html+=`<div class="briefing-section"><div class="briefing-section-title">🟠 Hoje <span class="briefing-count">${todayTasks.length}</span></div>`;
+  if(todayTasks.length) todayTasks.forEach(t=>{
+    const p=person(t.person);
+    html+=`<div class="briefing-item today"><div style="flex:1"><div>${t.title}</div><div class="briefing-item-meta">${p.name} · <span class="tag ${t.priority}" style="font-size:9px">${t.priority.toUpperCase()}</span> · ${t.tipo==='minha'?'Eu faço':'Delegada'}</div></div></div>`;
+  });
+  else html+=`<div class="briefing-empty">Nenhuma tarefa para hoje</div>`;
+  html+=`</div>`;
+
+  // Upcoming
+  html+=`<div class="briefing-section"><div class="briefing-section-title">🔵 Próximos 3 dias <span class="briefing-count">${upcoming.length}</span></div>`;
+  if(upcoming.length) upcoming.slice(0,5).forEach(t=>{
+    const p=person(t.person);
+    html+=`<div class="briefing-item upcoming"><div style="flex:1"><div>${t.title}</div><div class="briefing-item-meta">${p.name} · ${formatDate(t.dueDate)}</div></div></div>`;
+  });
+  else html+=`<div class="briefing-empty">Nada nos próximos 3 dias</div>`;
+  html+=`</div>`;
+
+  // Follow-ups
+  if(followups.length){
+    html+=`<div class="briefing-section"><div class="briefing-section-title">🟡 Follow-ups pendentes <span class="briefing-count">${followups.length}</span></div>`;
+    followups.slice(0,5).forEach(t=>{
+      const p=person(t.person);
+      const created=t._created||t.dueDate||isoToday;
+      const days=Math.floor((today-new Date(created+'T12:00:00'))/(1000*60*60*24));
+      html+=`<div class="briefing-item followup"><div style="flex:1"><div>${t.title}</div><div class="briefing-item-meta">Delegada a ${p.name} · ${days} dias sem update</div></div></div>`;
+    });
+    html+=`</div>`;
+  }
+
+  document.getElementById('briefing-body').innerHTML=html;
+  document.getElementById('briefing-overlay').classList.add('open');
+}
+
+function closeBriefing(){
+  document.getElementById('briefing-overlay').classList.remove('open');
 }
 
 function renderNotifs(){
@@ -1198,14 +1310,22 @@ function renderCal(){
     let html=`<div class="cal-month"><div class="cal-month-head" style="grid-template-columns:50px repeat(7,1fr)"><div></div>`;
     for(let d=0;d<7;d++){ const wd=addDays(ws,d); html+=`<div class="cal-dow ${isoDate(wd)===isoToday?'':''}">` +DAYS[d]+' '+wd.getDate()+'</div>'; }
     html+=`</div><div class="cal-grid" style="grid-template-columns:50px repeat(7,1fr)">`;
+    // All-day tasks row
+    html+=`<div style="font-family:'Geist Mono',monospace;font-size:9px;color:var(--t4);padding:6px;text-align:right;border-right:1px solid var(--b1);border-bottom:1px solid var(--b2);background:var(--s1)">Tarefas</div>`;
+    for(let d=0;d<7;d++){
+      const wd=addDays(ws,d), cd=isoDate(wd);
+      const dt=tasks.filter(t=>t.dueDate===cd&&!t.done);
+      html+=`<div style="border-right:1px solid var(--b1);border-bottom:1px solid var(--b2);padding:4px;background:var(--s1);${isoDate(wd)===isoToday?'background:var(--acc3)':''}">`;
+      dt.forEach(t=>{ html+=`<div class="cal-task-pill ${t.priority}" onclick="openPanel('${t.id}')" style="margin-bottom:3px">${t.title}</div>`; });
+      if(!dt.length) html+=`<div style="font-size:10px;color:var(--t4);padding:2px">—</div>`;
+      html+=`</div>`;
+    }
+    // Hour rows
     for(let h=8;h<=19;h++){
       html+=`<div style="font-family:'Geist Mono',monospace;font-size:9px;color:var(--t4);padding:4px 6px;text-align:right;border-right:1px solid var(--b1);border-bottom:1px solid var(--b1)">${h}h</div>`;
       for(let d=0;d<7;d++){
-        const wd=addDays(ws,d), cd=isoDate(wd);
-        const dt=tasks.filter(t=>t.dueDate===cd&&!t.done);
-        html+=`<div style="border-right:1px solid var(--b1);border-bottom:1px solid var(--b1);min-height:48px;padding:3px;${isoDate(wd)===isoToday?'background:var(--acc3)':''}">`;
-        if(h===9) dt.forEach(t=>{ html+=`<div class="cal-task-pill ${t.priority}" onclick="openPanel('${t.id}')" style="margin-bottom:3px">${t.title}</div>`; });
-        html+=`</div>`;
+        const wd=addDays(ws,d);
+        html+=`<div style="border-right:1px solid var(--b1);border-bottom:1px solid var(--b1);min-height:48px;padding:3px;${isoDate(wd)===isoToday?'background:var(--acc3)':''}"></div>`;
       }
     }
     html+=`</div></div>`; body.innerHTML=html;
@@ -1216,7 +1336,18 @@ function renderCal(){
 // TASK MODAL
 // ══════════════════════════════════════════════
 function openTaskModal(_, personHint, dateHint){
-  if(personHint) document.getElementById('m-person').value=personHint;
+  // Reset form state
+  document.getElementById('m-title').value='';
+  document.getElementById('m-context').value='';
+  mPrio='media'; mTipo='delegada';
+  document.querySelectorAll('#task-modal .pbtn').forEach(b=>b.classList.remove('sel'));
+  document.querySelector('#task-modal .pbtn.media').classList.add('sel');
+  document.querySelectorAll('#task-modal .tbtn').forEach(b=>b.classList.remove('sel'));
+  document.querySelector('#task-modal .tbtn.delegada').classList.add('sel');
+  // Update person select from PEOPLE
+  const sel=document.getElementById('m-person');
+  sel.innerHTML=PEOPLE.map(p=>`<option value="${p.id}">${p.name}${p.id==='lucas'?' (você)':''}</option>`).join('');
+  if(personHint) sel.value=personHint;
   if(dateHint) document.getElementById('m-date').value=dateHint;
   else document.getElementById('m-date').value=isoToday;
   openModal('task-modal');
