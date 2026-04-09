@@ -919,9 +919,6 @@ sb.auth.onAuthStateChange(async(event, session)=>{
     if(lb){ lb.disabled=false; lb.textContent='Entrar'; }
     if(!_authLoaded){
       _authLoaded=true;
-      // Verify session is ready before making queries
-      const { data:{ session:s } }=await sb.auth.getSession();
-      if(!s){ _authLoaded=false; return; }
       await loadTasks();
       await loadOOState();
       scheduleNotifCheck();
@@ -1733,7 +1730,7 @@ async function addDemandsToBoard(){
 // 1:1
 // ══════════════════════════════════════════════
 // ── Persistence (Supabase + localStorage cache) ──
-const OO_VERSION='v3';
+const OO_VERSION='v4';
 
 function saveOOLocal(){
   localStorage.setItem('oo_ver',OO_VERSION);
@@ -1770,20 +1767,22 @@ function loadOOFromLocal(){
 }
 
 async function loadOOFromSupabase(){
-  // Try up to 2 times (session may not be ready on first try)
-  for(let attempt=0; attempt<2; attempt++){
+  for(let attempt=0; attempt<3; attempt++){
     try {
+      // Verify we have a valid session before querying
+      const { data:{ session } }=await sb.auth.getSession();
+      if(!session){ console.warn('loadOO: no session, attempt',attempt); await new Promise(r=>setTimeout(r,600)); continue; }
       const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').maybeSingle();
-      if(error){ console.warn('loadOO attempt',attempt,error.message); continue; }
+      console.log('loadOO attempt',attempt,': data=',data?'found ('+((data.people||[]).length)+' people)':'null','error=',error?.message||'none');
+      if(error){ await new Promise(r=>setTimeout(r,600)); continue; }
       if(data){
         if(data.people && Array.isArray(data.people) && data.people.length) PEOPLE=data.people;
         if(data.oo_data && typeof data.oo_data==='object' && Object.keys(data.oo_data).length) oo11=data.oo_data;
         return true;
       }
-      return false; // query ok but no data
-    } catch(e){ console.warn('loadOO attempt',attempt,e); }
-    // Small delay before retry
-    await new Promise(r=>setTimeout(r,500));
+      return false;
+    } catch(e){ console.warn('loadOO catch attempt',attempt,e); }
+    await new Promise(r=>setTimeout(r,600));
   }
   return false;
 }
