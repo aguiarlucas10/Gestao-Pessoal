@@ -1803,23 +1803,27 @@ async function saveOOState(){
   try {
     const session=_currentSession;
     if(!session){ console.error('saveOO: NO SESSION'); toast('Sessão expirada — faça login novamente','error'); return; }
-    const body=JSON.stringify({
-      owner_id:session.user.id,
-      people:PEOPLE,
-      oo_data:oo11,
-      updated_at:new Date().toISOString()
+    const payload={ people:PEOPLE, oo_data:oo11, updated_at:new Date().toISOString() };
+    const headers={ 'Content-Type':'application/json', 'apikey':SB_ANON, 'Authorization':'Bearer '+session.access_token, 'Prefer':'return=minimal' };
+    // Try PATCH (update existing row) first
+    let res=await fetch(`${SB_URL}/rest/v1/cmd_user_settings?owner_id=eq.${session.user.id}`,{
+      method:'PATCH', headers, body:JSON.stringify(payload)
     });
-    // Use fetch directly to ensure auth header is sent
-    const res=await fetch(`${SB_URL}/rest/v1/cmd_user_settings`,{
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'apikey':SB_ANON,
-        'Authorization':'Bearer '+session.access_token,
-        'Prefer':'resolution=merge-duplicates'
-      },
-      body
-    });
+    // If no row matched (204 with no rows affected), INSERT instead
+    if(res.ok){
+      const txt=await res.text();
+      // Check if PATCH actually updated something by trying a GET
+      const check=await fetch(`${SB_URL}/rest/v1/cmd_user_settings?owner_id=eq.${session.user.id}&select=id`,{
+        headers:{ 'apikey':SB_ANON, 'Authorization':'Bearer '+session.access_token }
+      });
+      const rows=await check.json();
+      if(!rows.length){
+        // No existing row — INSERT
+        res=await fetch(`${SB_URL}/rest/v1/cmd_user_settings`,{
+          method:'POST', headers, body:JSON.stringify({...payload, owner_id:session.user.id})
+        });
+      }
+    }
     if(!res.ok){
       const err=await res.text();
       console.error('saveOO HTTP',res.status,err);
