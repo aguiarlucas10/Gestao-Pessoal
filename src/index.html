@@ -819,15 +819,7 @@ const sb = createClient(SB_URL, SB_ANON);
 // ══════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════
-const DEFAULT_PEOPLE = [
-  { id:'lucas',    name:'Lucas',    init:'L',  role:'Diretor Comercial',       color:'#4f7cff', bg:'rgba(79,124,255,.2)', hidden:false },
-  { id:'rafa',     name:'Rafa',     init:'R',  role:'Site / CRM / Promoções',  color:'#2dce89', bg:'rgba(45,206,137,.2)', hidden:false },
-  { id:'edu',      name:'Edu',      init:'E',  role:'Marketplace (Elevate)',   color:'#ff8c42', bg:'rgba(255,140,66,.2)', hidden:false },
-  { id:'gustavo',  name:'Gustavo',  init:'G',  role:'Lead Comercial',          color:'#a78bfa', bg:'rgba(167,139,250,.2)', hidden:false },
-  { id:'catarina', name:'Catarina', init:'C',  role:'Diretora de Operações',   color:'#ff4d6d', bg:'rgba(255,77,109,.2)', hidden:false },
-  { id:'junior',   name:'Junior',   init:'JR', role:'Founder / Owner',         color:'#ffd166', bg:'rgba(255,209,102,.2)', hidden:false },
-];
-let PEOPLE = [...DEFAULT_PEOPLE];
+let PEOPLE = [];
 let ooShowHidden=false, ooDragIdx=null;
 
 const today = new Date();
@@ -853,7 +845,7 @@ let oo11={};
 // ══════════════════════════════════════════════
 function isoDate(d){ return d.toISOString().split('T')[0]; }
 function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
-function person(id){ return PEOPLE.find(p=>p.id===id)||PEOPLE[0]; }
+function person(id){ return PEOPLE.find(p=>p.id===id)||PEOPLE[0]||{id:'?',name:'?',init:'?',role:'',color:'#666',bg:'rgba(100,100,100,.2)',hidden:false}; }
 function av(p,size=18){ return `<div class="av" style="width:${size}px;height:${size}px;background:${p.bg};color:${p.color};font-size:${Math.round(size*0.42)}px">${p.init}</div>`; }
 function formatDate(s){ if(!s) return '—'; const d=new Date(s+'T12:00:00'); return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}); }
 function isOverdue(s){ return s && new Date(s+'T23:59:59')<today && s!==isoToday; }
@@ -1717,7 +1709,7 @@ async function addDemandsToBoard(){
 // 1:1
 // ══════════════════════════════════════════════
 // ── Persistence (Supabase + localStorage cache) ──
-const OO_VERSION='v4';
+const OO_VERSION='v5';
 
 function saveOOLocal(){
   localStorage.setItem('oo_ver',OO_VERSION);
@@ -1797,12 +1789,10 @@ async function loadOOState(){
   // 3. If localStorage had data, keep it
   if(localLoaded) return;
 
-  // 4. First time — defaults
-  PEOPLE=[...DEFAULT_PEOPLE];
+  // 4. First time — empty, user adds people via +
+  PEOPLE=[];
   oo11={};
-  PEOPLE.forEach(p=>{ oo11[p.id]={topics:[],actions:[],notes:''}; });
   renderOneOne();
-  await saveOOState();
 }
 
 // ── People management ──
