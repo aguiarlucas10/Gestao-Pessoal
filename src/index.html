@@ -888,6 +888,7 @@ window.doLogout=doLogout;
 
 let _authLoaded=false;
 sb.auth.onAuthStateChange(async(event, session)=>{
+  console.log('[AUTH]', event, 'session?', !!session, 'uid:', session?.user?.id);
   if(session){
     document.getElementById('auth-screen').style.display='none';
     document.getElementById('shell').style.display='flex';
@@ -901,9 +902,12 @@ sb.auth.onAuthStateChange(async(event, session)=>{
       _authLoaded=true;
       // Force token refresh to avoid expired-token returning empty via RLS
       const { data:refreshed }=await sb.auth.refreshSession();
+      console.log('[AUTH] refreshSession:', !!refreshed.session);
       if(!refreshed.session){ console.warn('Token refresh failed, using existing session'); }
       await loadTasks();
+      console.log('[LOAD] tasks loaded:', tasks.length);
       await loadOOState();
+      console.log('[LOAD] PEOPLE loaded:', PEOPLE.length);
       scheduleNotifCheck();
       showBriefing();
     }
