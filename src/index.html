@@ -1721,17 +1721,32 @@ async function saveOOState(){
   saveOOLocal();
   try {
     const { data:{ session } }=await sb.auth.getSession();
-    if(!session){ console.error('saveOOState: no session'); return; }
-    const uid=session.user.id;
-    const { error }=await sb.from('cmd_user_settings').upsert({
-      owner_id:uid,
+    if(!session){ console.error('saveOO: NO SESSION'); toast('Sessão expirada — faça login novamente','error'); return; }
+    const body=JSON.stringify({
+      owner_id:session.user.id,
       people:PEOPLE,
       oo_data:oo11,
       updated_at:new Date().toISOString()
-    },{onConflict:'owner_id'});
-    if(error){ console.error('saveOOState upsert error:',error.message,error.details,error.hint); toast('Erro ao salvar: '+error.message,'error'); }
-    else { console.log('saveOOState: saved',PEOPLE.length,'people'); }
-  } catch(e){ console.error('saveOOState catch:',e); toast('Erro ao salvar configurações','error'); }
+    });
+    // Use fetch directly to ensure auth header is sent
+    const res=await fetch(`${SB_URL}/rest/v1/cmd_user_settings`,{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'apikey':SB_ANON,
+        'Authorization':'Bearer '+session.access_token,
+        'Prefer':'resolution=merge-duplicates'
+      },
+      body
+    });
+    if(!res.ok){
+      const err=await res.text();
+      console.error('saveOO HTTP',res.status,err);
+      toast('Erro ao salvar: '+res.status,'error');
+    } else {
+      console.log('saveOO OK:',PEOPLE.length,'people saved');
+    }
+  } catch(e){ console.error('saveOO catch:',e); toast('Erro ao salvar','error'); }
 }
 
 function loadOOFromLocal(){
