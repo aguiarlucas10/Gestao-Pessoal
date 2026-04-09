@@ -717,7 +717,17 @@ select.modal-input{cursor:pointer}
       </div>
       <div class="sp-field"><div class="sp-label">Data do Prazo</div><input type="date" class="modal-input" id="m-date"></div>
     </div>
-    <div class="sp-field"><div class="sp-label">Origem / Reunião</div><input class="modal-input" id="m-context" placeholder="Ex: 1:1 Junior — 07/04"></div>
+    <div class="modal-row">
+      <div class="sp-field"><div class="sp-label">Origem / Reunião</div><input class="modal-input" id="m-context" placeholder="Ex: 1:1 Junior — 07/04"></div>
+      <div class="sp-field"><div class="sp-label">Recorrência</div>
+        <select class="modal-input" id="m-recurrence">
+          <option value="">Nenhuma</option>
+          <option value="daily">Diária</option>
+          <option value="weekly">Semanal</option>
+          <option value="monthly">Mensal</option>
+        </select>
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn-ghost" onclick="closeModal('task-modal')">Cancelar</button>
       <button class="btn-primary" onclick="addTask()">Criar Tarefa</button>
@@ -886,14 +896,22 @@ async function loadTasks(){
 }
 
 function dbToTask(r){
-  return { id:r.id, title:r.title, person:r.person, dueDate:r.due_date, priority:r.priority, tipo:r.tipo, context:r.context||'', done:r.done, notes:r.notes||'' };
+  return { id:r.id, title:r.title, person:r.person, dueDate:r.due_date, priority:r.priority, tipo:r.tipo, context:r.context||'', done:r.done, notes:r.notes||'', recurrence:r.recurrence||null };
 }
 
 async function sbUpsert(t){
   const { data: { user } }=await sb.auth.getUser();
-  const row={ id:String(t.id), title:t.title, person:t.person, due_date:t.dueDate||null, priority:t.priority, tipo:t.tipo, context:t.context||'', done:t.done, notes:t.notes||'', owner_id:user.id };
+  const row={ id:String(t.id), title:t.title, person:t.person, due_date:t.dueDate||null, priority:t.priority, tipo:t.tipo, context:t.context||'', done:t.done, notes:t.notes||'', recurrence:t.recurrence||null, owner_id:user.id };
   const { error }=await sb.from('cmd_tasks').upsert(row,{onConflict:'id'});
   if(error) toast('Erro ao salvar: '+error.message,'error');
+}
+
+function nextRecurrenceDate(dueDate, recurrence){
+  const d=new Date(dueDate+'T12:00:00');
+  if(recurrence==='daily') d.setDate(d.getDate()+1);
+  else if(recurrence==='weekly') d.setDate(d.getDate()+7);
+  else if(recurrence==='monthly') d.setMonth(d.getMonth()+1);
+  return isoDate(d);
 }
 
 async function sbDelete(id){
@@ -920,12 +938,26 @@ async function saveMeeting(title, participants, date, transcript, ata, demands){
 function checkNotifications(){
   const newNotifs=[];
   tasks.filter(t=>!t.done).forEach(t=>{
+    // Due date notifications
     if(isOverdue(t.dueDate)){
       newNotifs.push({ id:'ov-'+t.id, type:'alta', text:`<strong>${t.title}</strong> está atrasada — prazo era ${formatDate(t.dueDate)}`, time:'Agora', taskId:t.id, read:false });
     } else if(isToday(t.dueDate)){
       newNotifs.push({ id:'td-'+t.id, type:'media', text:`<strong>${t.title}</strong> vence <strong>hoje</strong>`, time:'Hoje', taskId:t.id, read:false });
     } else if(t.dueDate===isoDate(addDays(today,1))){
       newNotifs.push({ id:'tm-'+t.id, type:'info', text:`<strong>${t.title}</strong> vence <strong>amanhã</strong>`, time:'Amanhã', taskId:t.id, read:false });
+    }
+    // Follow-up cadence (2→5→7 days) for delegated tasks
+    if(t.tipo==='delegada'){
+      const ref=t.dueDate||isoToday;
+      const days=Math.floor((today-new Date(ref+'T12:00:00'))/(1000*60*60*24));
+      const p=person(t.person);
+      if(days>=7){
+        newNotifs.push({ id:'fu7-'+t.id, type:'alta', text:`⚠️ <strong>${t.title}</strong> — 7+ dias sem retorno de ${p.name}. Cobrar ou reavaliar.`, time:'Dia '+days, taskId:t.id, read:false });
+      } else if(days>=5){
+        newNotifs.push({ id:'fu5-'+t.id, type:'media', text:`📋 <strong>${t.title}</strong> — 5 dias delegada a ${p.name}. Follow-up direto recomendado.`, time:'Dia '+days, taskId:t.id, read:false });
+      } else if(days>=2){
+        newNotifs.push({ id:'fu2-'+t.id, type:'info', text:`💬 <strong>${t.title}</strong> — 2+ dias com ${p.name}. Verificar andamento.`, time:'Dia '+days, taskId:t.id, read:false });
+      }
     }
   });
   // Merge — não duplicar
@@ -1134,9 +1166,20 @@ function renderBoard(){
   });
 }
 
+function followupBadge(t){
+  if(t.tipo!=='delegada'||t.done) return '';
+  const ref=t.dueDate||isoToday;
+  const days=Math.floor((today-new Date(ref+'T12:00:00'))/(1000*60*60*24));
+  if(days>=7) return `<span class="tag" style="background:var(--red2);color:var(--red);font-size:9px">Dia ${days} ⚠</span>`;
+  if(days>=5) return `<span class="tag" style="background:var(--org2);color:var(--org);font-size:9px">Dia ${days}</span>`;
+  if(days>=2) return `<span class="tag" style="background:var(--acc2);color:var(--acc);font-size:9px">Dia ${days}</span>`;
+  return '';
+}
+
 function cardHTML(t){
   const p=person(t.person);
   const over=isOverdue(t.dueDate), tod=isToday(t.dueDate);
+  const fub=followupBadge(t);
   return `
     <div class="card p-${t.priority}" onclick="openPanel('${t.id}')">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:7px">
@@ -1148,6 +1191,8 @@ function cardHTML(t){
         <span class="tag ${t.tipo}">${t.tipo==='minha'?'Eu faço':'Delegada'}</span>
         ${t.context?`<span class="tag origem">${t.context}</span>`:''}
         <span class="tag dt ${over?'overdue':tod?'overdue':''}">${over?'⚠ ':tod?'★ ':''}${formatDate(t.dueDate)}</span>
+        ${fub}
+        ${t.recurrence?`<span class="tag" style="background:var(--grn2);color:var(--grn);font-size:9px">🔄 ${t.recurrence==='daily'?'Diária':t.recurrence==='weekly'?'Semanal':'Mensal'}</span>`:''}
       </div>
       <div class="card-foot"><div class="card-person">${av(p,18)} ${p.name}</div></div>
     </div>`;
@@ -1170,7 +1215,17 @@ async function toggleDone(id){
   t.done=!t.done;
   renderBoard(); if(currentView==='calendar') renderCal(); if(currentView==='people') renderPeople();
   await sbUpsert(t);
-  if(t.done) toast('Tarefa concluída ✓');
+  if(t.done){
+    toast('Tarefa concluída ✓');
+    // Create next occurrence for recurring tasks
+    if(t.recurrence && t.dueDate){
+      const next={ id:crypto.randomUUID(), title:t.title, person:t.person, dueDate:nextRecurrenceDate(t.dueDate,t.recurrence), priority:t.priority, tipo:t.tipo, context:t.context, done:false, notes:'', recurrence:t.recurrence };
+      tasks.unshift(next);
+      await sbUpsert(next);
+      renderBoard(); if(currentView==='calendar') renderCal();
+      toast(`Próxima ocorrência: ${formatDate(next.dueDate)}`);
+    }
+  }
 }
 
 // ══════════════════════════════════════════════
@@ -1347,6 +1402,7 @@ function openTaskModal(_, personHint, dateHint){
   // Update person select from PEOPLE
   const sel=document.getElementById('m-person');
   sel.innerHTML=PEOPLE.map(p=>`<option value="${p.id}">${p.name}${p.id==='lucas'?' (você)':''}</option>`).join('');
+  document.getElementById('m-recurrence').value='';
   if(personHint) sel.value=personHint;
   if(dateHint) document.getElementById('m-date').value=dateHint;
   else document.getElementById('m-date').value=isoToday;
@@ -1363,7 +1419,8 @@ async function addTask(){
   if(!title){ toast('Preencha o título','error'); return; }
   const { data:{ user } }=await sb.auth.getUser();
   const newId=crypto.randomUUID();
-  const t={ id:newId, title, person:document.getElementById('m-person').value, dueDate:document.getElementById('m-date').value, priority:mPrio, tipo:mTipo, context:document.getElementById('m-context').value, done:false, notes:'' };
+  const rec=document.getElementById('m-recurrence').value||null;
+  const t={ id:newId, title, person:document.getElementById('m-person').value, dueDate:document.getElementById('m-date').value, priority:mPrio, tipo:mTipo, context:document.getElementById('m-context').value, done:false, notes:'', recurrence:rec };
   tasks.unshift(t);
   closeModal('task-modal');
   document.getElementById('m-title').value=''; document.getElementById('m-context').value='';
