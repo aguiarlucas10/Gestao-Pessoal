@@ -1312,7 +1312,8 @@ function openPanel(id){
       <div class="assign-wrap">${PEOPLE.map(p=>`<button class="asbtn ${t.person===p.id?'sel':''}" onclick="updateField('${id}','person','${p.id}')">${av(p,14)} ${p.name}</button>`).join('')}</div>
     </div>
     <div class="sp-field"><div class="sp-label">Data do Prazo</div><input type="date" class="date-input" value="${t.dueDate||''}" onchange="updateField('${id}','dueDate',this.value)"></div>
-    <div class="sp-field"><div class="sp-label">Origem / Reunião</div><div class="sp-val" style="font-size:12px;color:var(--t2)">${t.context||'—'}</div></div>
+    <div class="sp-field"><div class="sp-label">Origem / Reunião</div><input class="date-input" value="${t.context||''}" placeholder="Ex: 1:1 Junior" onblur="updateField('${id}','context',this.value)" style="font-family:'Geist',sans-serif"></div>
+    ${t.recurrence?`<div class="sp-field"><div class="sp-label">Recorrência</div><select class="date-input" onchange="updateField('${id}','recurrence',this.value||null)"><option value="">Nenhuma</option><option value="daily" ${t.recurrence==='daily'?'selected':''}>Diária</option><option value="weekly" ${t.recurrence==='weekly'?'selected':''}>Semanal</option><option value="monthly" ${t.recurrence==='monthly'?'selected':''}>Mensal</option></select></div>`:''}
     <div class="sp-field"><div class="sp-label">Notas</div><textarea class="sp-notes" placeholder="Próximos passos..." onblur="updateField('${id}','notes',this.value)">${t.notes||''}</textarea></div>
     <button class="sp-del" onclick="deleteTask('${id}')">Excluir tarefa</button>
   `;
@@ -1515,7 +1516,26 @@ async function toggleRecording(){
   if(!isRecording){
     try {
       const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-      if(!SpeechRecognition){ toast('Use Chrome ou Edge para transcrição em tempo real.','error'); return; }
+      if(!SpeechRecognition){
+        // Fallback: record audio only, send to Whisper when stopped
+        try {
+          recStream2=await navigator.mediaDevices.getUserMedia({audio:true});
+          const mt=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
+          mediaRecorder=new MediaRecorder(recStream2,{mimeType:mt});
+          audioChunks=[];
+          mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) audioChunks.push(e.data); };
+          mediaRecorder.start(10000);
+          isRecording=true;
+          showTransTextarea();
+          getTransText().value='Gravando áudio... Ao parar, o texto será transcrito automaticamente via Whisper.';
+          btn.className='rec-btn recording';
+          document.getElementById('rec-label').textContent='Parar Gravação';
+          document.getElementById('rec-timer').style.display='block';
+          startTimer();
+          toast('Gravando áudio (Whisper transcreverá ao parar)');
+        } catch(e){ toast('Microfone bloqueado: '+e.message,'error'); }
+        return;
+      }
 
       speechRec=new SpeechRecognition();
       speechRec.continuous=true;
@@ -1579,6 +1599,8 @@ async function toggleRecording(){
     clearInterval(recInterval);
     updateWordCount();
     toast('Gravação finalizada — edite o texto e clique em Gerar com IA');
+    // Auto-refine with Whisper if no SpeechRecognition was used (fallback mode)
+    if(!speechRec && audioChunks.length) refineWithWhisper();
   }
 }
 
