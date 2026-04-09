@@ -1728,15 +1728,18 @@ function saveOOLocal(){
 async function saveOOState(){
   saveOOLocal();
   try {
-    const { data:{ user } }=await sb.auth.getUser();
-    if(!user) return;
-    await sb.from('cmd_user_settings').upsert({
-      owner_id:user.id,
+    const { data:{ session } }=await sb.auth.getSession();
+    if(!session){ console.error('saveOOState: no session'); return; }
+    const uid=session.user.id;
+    const { error }=await sb.from('cmd_user_settings').upsert({
+      owner_id:uid,
       people:PEOPLE,
       oo_data:oo11,
       updated_at:new Date().toISOString()
     },{onConflict:'owner_id'});
-  } catch(e){ console.error('saveOOState:',e); }
+    if(error){ console.error('saveOOState upsert error:',error.message,error.details,error.hint); toast('Erro ao salvar: '+error.message,'error'); }
+    else { console.log('saveOOState: saved',PEOPLE.length,'people'); }
+  } catch(e){ console.error('saveOOState catch:',e); toast('Erro ao salvar configurações','error'); }
 }
 
 function loadOOFromLocal(){
