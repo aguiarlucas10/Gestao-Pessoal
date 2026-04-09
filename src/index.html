@@ -888,7 +888,6 @@ window.doLogout=doLogout;
 
 let _authLoaded=false;
 sb.auth.onAuthStateChange((event, session)=>{
-  console.log('[AUTH]', event, 'session?', !!session, 'uid:', session?.user?.id);
   if(session){
     document.getElementById('auth-screen').style.display='none';
     document.getElementById('shell').style.display='flex';
@@ -903,9 +902,7 @@ sb.auth.onAuthStateChange((event, session)=>{
       // Load data outside onAuthStateChange to avoid deadlock with Supabase internal auth lock
       setTimeout(async()=>{
         await loadTasks();
-        console.log('[LOAD] tasks loaded:', tasks.length);
         await loadOOState();
-        console.log('[LOAD] PEOPLE loaded:', PEOPLE.length);
         scheduleNotifCheck();
         showBriefing();
       },0);
@@ -922,12 +919,9 @@ sb.auth.onAuthStateChange((event, session)=>{
 // SUPABASE CRUD
 // ══════════════════════════════════════════════
 async function loadTasks(){
-  console.log('[loadTasks] CALLED');
   for(let attempt=0; attempt<2; attempt++){
     try {
-      console.log('[loadTasks] querying attempt',attempt);
-      const { data, error, status }=await sb.from('cmd_tasks').select('*').order('created_at',{ascending:false});
-      console.log('[loadTasks] attempt',attempt,'status:',status,'rows:',data?.length,'error:',error?.message||'none');
+      const { data, error }=await sb.from('cmd_tasks').select('*').order('created_at',{ascending:false});
       if(error){ console.warn('loadTasks attempt',attempt,error.message); if(attempt===0){ await new Promise(r=>setTimeout(r,500)); continue; } toast('Erro ao carregar tarefas: '+error.message,'error'); return; }
       tasks=(data||[]).map(dbToTask);
       renderBoard(); renderCal(); renderPeople();
