@@ -348,6 +348,37 @@ body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--t1)}
 .oo-meeting-title{font-size:13px;font-weight:500}
 .oo-meeting-sub{font-size:11px;color:var(--t3);margin-top:3px}
 
+/* ── Reuniões ── */
+#view-reunioes{flex-direction:row}
+.reun-list{width:320px;flex-shrink:0;border-right:1px solid var(--b1);display:flex;flex-direction:column;overflow:hidden}
+.reun-list-head{padding:14px 16px;border-bottom:1px solid var(--b1);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.reun-list-title{font-family:'Instrument Serif',serif;font-size:16px}
+.reun-items{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:6px}
+.reun-items::-webkit-scrollbar{width:3px}
+.reun-items::-webkit-scrollbar-thumb{background:var(--b2);border-radius:99px}
+.reun-card{display:flex;align-items:center;gap:12px;padding:12px;border-radius:10px;border:1px solid transparent;cursor:pointer;transition:all .15s}
+.reun-card:hover{background:var(--s2)}
+.reun-card.active{background:var(--acc2);border-color:rgba(79,124,255,.25)}
+.reun-card-date{background:var(--bg);border:1px solid var(--b1);border-radius:7px;padding:6px 10px;text-align:center;flex-shrink:0;min-width:42px}
+.reun-card-day{font-family:'Geist Mono',monospace;font-size:16px;font-weight:600;line-height:1;color:var(--t1)}
+.reun-card-mon{font-family:'Geist Mono',monospace;font-size:9px;color:var(--t3);text-transform:uppercase}
+.reun-card-info{flex:1;min-width:0}
+.reun-card-title{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reun-card-sub{font-size:11px;color:var(--t3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reun-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.reun-head{padding:16px 24px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:12px;flex-shrink:0;background:var(--s1)}
+.reun-head-title{font-family:'Instrument Serif',serif;font-size:20px;flex:1}
+.reun-head-date{font-size:12px;color:var(--t3)}
+.reun-head-btns{display:flex;gap:8px}
+.reun-body{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:20px}
+.reun-body::-webkit-scrollbar{width:4px}
+.reun-body::-webkit-scrollbar-thumb{background:var(--b2);border-radius:99px}
+.reun-participants{display:flex;flex-wrap:wrap;gap:6px}
+.reun-participant{display:flex;align-items:center;gap:6px;background:var(--s2);border:1px solid var(--b1);border-radius:20px;padding:4px 10px 4px 4px;font-size:12px}
+.reun-participant-av{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:white}
+.reun-ata{background:var(--s2);border:1px solid var(--b1);border-radius:9px;padding:14px 16px;font-size:12.5px;color:var(--t2);line-height:1.7;white-space:pre-line}
+.reun-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:13px}
+
 /* ── 1:1 manage ── */
 .oo-manage-bar{display:flex;gap:6px}
 .oo-manage-btn{font-size:11px;color:var(--t3);cursor:pointer;padding:3px 7px;border-radius:5px;border:1px solid var(--b1);background:transparent;font-family:'Geist',sans-serif;transition:all .15s}
@@ -485,6 +516,11 @@ select.modal-input{cursor:pointer}
   .oneone-list{width:100%;border-right:none;border-bottom:1px solid var(--b1);max-height:200px}
   .oneone-items{flex-direction:row;overflow-x:auto;overflow-y:hidden}
   .oo-person{flex-shrink:0;min-width:180px}
+  /* Reuniões: stack vertically */
+  #view-reunioes{flex-direction:column}
+  .reun-list{width:100%;border-right:none;border-bottom:1px solid var(--b1);max-height:200px}
+  .reun-items{flex-direction:row;overflow-x:auto;overflow-y:hidden}
+  .reun-card{flex-shrink:0;min-width:200px}
   /* Side panel full-screen */
   .side-panel.open{position:fixed;left:0;top:0;bottom:0;width:100%;z-index:150}
   /* Modal */
@@ -550,6 +586,7 @@ select.modal-input{cursor:pointer}
       <div class="nav-sec-label">Reuniões</div>
       <div class="nav-item" onclick="switchNav('transcription',this)"><span class="nav-icon">🎙️</span>Transcrição</div>
       <div class="nav-item" onclick="switchNav('11',this)"><span class="nav-icon">💬</span>1:1s</div>
+      <div class="nav-item" onclick="switchNav('reunioes',this)"><span class="nav-icon">📋</span>Reuniões</div>
     </div>
     <div class="nav-footer">
       <div class="user-chip">
@@ -722,6 +759,25 @@ select.modal-input{cursor:pointer}
             <div style="text-align:center;color:var(--t3)">
               <div style="font-size:40px;margin-bottom:12px;opacity:.3">💬</div>
               <div style="font-size:13px">Selecione uma pessoa</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- REUNIÕES -->
+      <div class="view-panel" id="view-reunioes">
+        <div class="reun-list">
+          <div class="reun-list-head">
+            <span class="reun-list-title">Reuniões</span>
+            <button class="oo-manage-btn" onclick="openNewMeetingModal()" title="Nova reunião">+</button>
+          </div>
+          <div class="reun-items" id="reun-items"></div>
+        </div>
+        <div class="reun-main" id="reun-main">
+          <div class="reun-empty">
+            <div style="text-align:center">
+              <div style="font-size:40px;margin-bottom:12px;opacity:.3">📋</div>
+              <div>Selecione ou crie uma reunião</div>
             </div>
           </div>
         </div>
@@ -1132,7 +1188,7 @@ document.addEventListener('click', e=>{
 // ══════════════════════════════════════════════
 // NAV
 // ══════════════════════════════════════════════
-const NAV_TITLES={ board:'Tarefas', calendar:'Calendário', people:'Por Pessoa', transcription:'Transcrição', '11':'1:1s com o Time' };
+const NAV_TITLES={ board:'Tarefas', calendar:'Calendário', people:'Por Pessoa', transcription:'Transcrição', '11':'1:1s com o Time', reunioes:'Reuniões' };
 
 function switchNav(view, el){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -1144,6 +1200,7 @@ function switchNav(view, el){
   if(view==='calendar') renderCal();
   if(view==='people') renderPeople();
   if(view==='11') renderOneOne();
+  if(view==='reunioes') renderMeetingsList();
   // Close mobile nav
   if(window.innerWidth<=768){ document.getElementById('main-nav').classList.remove('open'); document.getElementById('nav-overlay').classList.remove('open'); }
 }
@@ -2023,6 +2080,208 @@ function editOOTopic(pid,i){ const d=ooData(pid); const txt=prompt('Editar tópi
 function delOOTopic(pid,i){ if(!confirm('Excluir este tópico?')) return; ooData(pid).topics.splice(i,1); saveOOState(); selectOO(pid); toast('Tópico excluído'); }
 function editOOAction(pid,i){ const a=ooData(pid).actions[i]; if(!a) return; const txt=prompt('Editar action item:',a.text); if(txt===null) return; a.text=txt; const prio=prompt('Prioridade (alta/media/baixa):',a.prio); if(prio) a.prio=prio; saveOOState(); selectOO(pid); }
 function delOOAction(pid,i){ if(!confirm('Excluir este action item?')) return; ooData(pid).actions.splice(i,1); saveOOState(); selectOO(pid); renderOneOne(); toast('Action item excluído'); }
+
+// ══════════════════════════════════════════════
+// REUNIÕES VIEW
+// ══════════════════════════════════════════════
+let allMeetings=[];
+let reunSelected=null;
+
+async function loadAllMeetings(){
+  const { data, error }=await sb.from('cmd_meetings').select('*').order('meeting_date',{ascending:false});
+  if(error){ console.warn('loadAllMeetings error:',error.message); return; }
+  allMeetings=data||[];
+}
+
+let _meetingsLoaded=false;
+function renderMeetingsList(){
+  const el=document.getElementById('reun-items');
+  if(!el) return;
+  if(!_meetingsLoaded){
+    _meetingsLoaded=true;
+    el.innerHTML='<div style="padding:16px;color:var(--t4);font-size:12px;text-align:center">Carregando...</div>';
+    loadAllMeetings().then(()=>renderMeetingsList());
+    return;
+  }
+  if(!allMeetings.length){
+    el.innerHTML='<div style="padding:16px;color:var(--t4);font-size:12px;text-align:center">Nenhuma reunião ainda. Clique + para criar.</div>';
+    return;
+  }
+  el.innerHTML=allMeetings.map(m=>{
+    const d=m.meeting_date?new Date(m.meeting_date+'T12:00:00'):new Date();
+    const day=String(d.getDate()).padStart(2,'0');
+    const mon=d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','');
+    const parts=(m.participants||[]).join(', ')||'Sem participantes';
+    return `<div class="reun-card ${reunSelected===m.id?'active':''}" onclick="selectMeeting('${m.id}')">
+      <div class="reun-card-date"><div class="reun-card-day">${day}</div><div class="reun-card-mon">${mon}</div></div>
+      <div class="reun-card-info"><div class="reun-card-title">${m.title||'Reunião'}</div><div class="reun-card-sub">${parts}</div></div>
+    </div>`;
+  }).join('');
+}
+
+async function selectMeeting(id){
+  reunSelected=id;
+  renderMeetingsList();
+  const m=allMeetings.find(x=>x.id===id);
+  if(!m) return;
+  const el=document.getElementById('reun-main');
+
+  // Load demands for this meeting
+  const { data:demands }=await sb.from('cmd_meeting_demands').select('*').eq('meeting_id',id);
+  const demandList=demands||[];
+
+  // Find related tasks from main board
+  const relatedTasks=tasks.filter(t=> demandList.some(d=>d.task_id===t.id) || (t.context||'').toLowerCase().includes((m.title||'').toLowerCase()));
+
+  const partsHtml=(m.participants||[]).map((p,i)=>{
+    const colors=['#4f7cff','#2dce89','#ff8c42','#a78bfa','#ff4d6d','#ffd166','#36d6c3','#f472b6'];
+    const c=colors[i%colors.length];
+    const init=p.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+    return `<div class="reun-participant"><div class="reun-participant-av" style="background:${c}">${init}</div>${p}</div>`;
+  }).join('');
+
+  const demandsHtml=demandList.length? demandList.map(d=>`
+    <div class="oo-action">
+      <div style="flex:1">
+        <div class="oo-action-text">${d.title}</div>
+        <div class="oo-action-meta">
+          <span class="tag ${d.priority||'media'}">${(d.priority||'media').toUpperCase()}</span>
+          <span style="font-size:10px;color:var(--t3)">${d.person||''}</span>
+        </div>
+      </div>
+    </div>`).join('')
+    :'<div style="font-size:12px;color:var(--t4)">Nenhuma demanda registrada.</div>';
+
+  const tasksHtml=relatedTasks.length? relatedTasks.map(t=>`
+    <div class="oo-action">
+      <div style="flex:1">
+        <div class="oo-action-text">${t.done?'<s style="color:var(--t3)">'+t.title+'</s>':t.title}</div>
+        <div class="oo-action-meta">
+          <span class="tag ${t.priority}">${t.priority.toUpperCase()}</span>
+          <span style="font-size:10px;color:var(--t3)">${t.person||''} · ${formatDate(t.dueDate)}</span>
+        </div>
+      </div>
+      <div class="oo-action-chk ${t.done?'done':''}">
+        ${t.done?'<svg width="7" height="7" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>':''}
+      </div>
+    </div>`).join('')
+    :'<div style="font-size:12px;color:var(--t4)">Nenhuma tarefa vinculada.</div>';
+
+  el.innerHTML=`
+    <div class="reun-head">
+      <div>
+        <div class="reun-head-title">${m.title||'Reunião'}</div>
+        <div class="reun-head-date">${formatDate(m.meeting_date)}</div>
+      </div>
+      <div class="reun-head-btns">
+        <button class="oo-section-add" onclick="editMeetingNotes('${m.id}')">Editar Notas</button>
+        <button class="oo-section-add" onclick="deleteMeeting('${m.id}')">Excluir</button>
+      </div>
+    </div>
+    <div class="reun-body">
+      <div class="oo-section">
+        <div class="oo-section-head"><div class="oo-section-title">👥 Participantes</div></div>
+        <div class="reun-participants">${partsHtml||'<span style="font-size:12px;color:var(--t4)">Sem participantes</span>'}</div>
+      </div>
+
+      <div class="oo-section">
+        <div class="oo-section-head"><div class="oo-section-title">📝 Ata</div></div>
+        <div class="reun-ata">${m.ata||'Sem ata disponível.'}</div>
+      </div>
+
+      <div class="oo-section">
+        <div class="oo-section-head"><div class="oo-section-title">⚡ Demandas</div></div>
+        ${demandsHtml}
+      </div>
+
+      <div class="oo-section">
+        <div class="oo-section-head"><div class="oo-section-title">📌 Tarefas Vinculadas</div></div>
+        ${tasksHtml}
+      </div>
+
+      ${m.transcript?`<div class="oo-section">
+        <div class="oo-section-head"><div class="oo-section-title">🎙️ Transcrição</div></div>
+        <div class="reun-ata" style="max-height:200px;overflow-y:auto;font-size:11.5px">${m.transcript}</div>
+      </div>`:''}
+
+      <div class="oo-section">
+        <div class="oo-section-head">
+          <div class="oo-section-title">📒 Anotações</div>
+        </div>
+        <textarea class="oo-note-area" placeholder="Anotações livres sobre esta reunião..." onblur="saveMeetingNotes('${m.id}',this.value)">${m.notes||''}</textarea>
+      </div>
+    </div>`;
+}
+
+function openNewMeetingModal(){
+  document.body.insertAdjacentHTML('beforeend',`
+    <div class="oo-modal-overlay" id="new-meeting-modal" onclick="if(event.target===this)this.remove()">
+      <div class="oo-modal" onclick="event.stopPropagation()" style="width:420px">
+        <h3>Nova Reunião</h3>
+        <div><label>Título</label><input id="nm-title" placeholder="Ex: Alinhamento semanal"></div>
+        <div><label>Data</label><input type="date" id="nm-date" value="${isoToday}"></div>
+        <div><label>Participantes (separados por vírgula)</label><input id="nm-parts" placeholder="Ex: Ana, João, Pedro"></div>
+        <div><label>Anotações iniciais</label><textarea id="nm-notes" class="oo-note-area" style="min-height:60px" placeholder="Pauta, observações..."></textarea></div>
+        <div class="oo-modal-btns">
+          <button class="btn-sm" onclick="document.getElementById('new-meeting-modal').remove()">Cancelar</button>
+          <button class="btn-sm primary" onclick="saveNewMeeting()">Criar</button>
+        </div>
+      </div>
+    </div>`);
+  document.getElementById('nm-title').focus();
+}
+
+async function saveNewMeeting(){
+  const title=document.getElementById('nm-title').value.trim();
+  const date=document.getElementById('nm-date').value;
+  const partsRaw=document.getElementById('nm-parts').value.trim();
+  const notes=document.getElementById('nm-notes').value.trim();
+  if(!title){ toast('Preencha o título','error'); return; }
+  const participants=partsRaw?partsRaw.split(',').map(s=>s.trim()).filter(Boolean):[];
+
+  const { data:{user} }=await sb.auth.getUser();
+  const { data:meeting, error }=await sb.from('cmd_meetings').insert({
+    title, participants, meeting_date:date||isoToday, transcript:'', ata:'', notes:notes, owner_id:user.id
+  }).select().single();
+  if(error){ toast('Erro ao criar reunião: '+error.message,'error'); return; }
+
+  document.getElementById('new-meeting-modal').remove();
+  allMeetings.unshift(meeting);
+  renderMeetingsList();
+  selectMeeting(meeting.id);
+  toast('Reunião criada');
+}
+
+async function saveMeetingNotes(id, notes){
+  const { error }=await sb.from('cmd_meetings').update({notes}).eq('id',id);
+  if(error){ toast('Erro ao salvar notas','error'); return; }
+  const m=allMeetings.find(x=>x.id===id);
+  if(m) m.notes=notes;
+}
+
+function editMeetingNotes(id){
+  const m=allMeetings.find(x=>x.id===id);
+  if(!m) return;
+  const newAta=prompt('Editar ata:', m.ata||'');
+  if(newAta===null) return;
+  m.ata=newAta;
+  sb.from('cmd_meetings').update({ata:newAta}).eq('id',id).then(({error})=>{
+    if(error) toast('Erro ao salvar ata','error');
+    else { selectMeeting(id); toast('Ata atualizada'); }
+  });
+}
+
+async function deleteMeeting(id){
+  if(!confirm('Excluir esta reunião?')) return;
+  await sb.from('cmd_meeting_demands').delete().eq('meeting_id',id);
+  const { error }=await sb.from('cmd_meetings').delete().eq('id',id);
+  if(error){ toast('Erro ao excluir: '+error.message,'error'); return; }
+  allMeetings=allMeetings.filter(x=>x.id!==id);
+  reunSelected=null;
+  renderMeetingsList();
+  document.getElementById('reun-main').innerHTML='<div class="reun-empty"><div style="text-align:center"><div style="font-size:40px;margin-bottom:12px;opacity:.3">📋</div><div>Selecione ou crie uma reunião</div></div></div>';
+  toast('Reunião excluída');
+}
 
 // ══════════════════════════════════════════════
 // INIT
