@@ -1869,7 +1869,43 @@ function selectOO(pid){
             <div class="oo-action-chk ${t.done?'done':''}" onclick="toggleDone('${t.id}');selectOO('${pid}')"></div>
           </div>`).join('') || '<div style="font-size:12px;color:var(--t3);padding:6px 0">Nenhuma demanda em aberto.</div>'}
       </div>
+      <div class="oo-section" id="oo-meetings-${pid}">
+        <div class="oo-section-head"><div class="oo-section-title">📅 Reuniões Anteriores</div></div>
+        <div style="font-size:12px;color:var(--t4);padding:4px 0">Carregando...</div>
+      </div>
     </div>`;
+  loadOOMeetings(pid);
+}
+
+async function loadOOMeetings(pid){
+  const el=document.getElementById('oo-meetings-'+pid);
+  if(!el) return;
+  try {
+    const p=person(pid);
+    const { data,error }=await sb.from('cmd_meetings').select('id,title,meeting_date,ata').order('meeting_date',{ascending:false}).limit(5);
+    if(error||!data){ el.innerHTML=`<div class="oo-section-head"><div class="oo-section-title">📅 Reuniões Anteriores</div></div><div style="font-size:12px;color:var(--t4);padding:4px 0">Nenhuma reunião encontrada.</div>`; return; }
+    // Filter meetings that mention this person's name
+    const relevant=data.filter(m=>(m.title||'').toLowerCase().includes(p.name.toLowerCase())||(m.ata||'').toLowerCase().includes(p.name.toLowerCase()));
+    let html=`<div class="oo-section-head"><div class="oo-section-title">📅 Reuniões Anteriores</div></div>`;
+    if(relevant.length){
+      relevant.forEach(m=>{
+        const preview=(m.ata||'').substring(0,120).replace(/\n/g,' ');
+        html+=`<div class="oo-topic" style="cursor:pointer" onclick="this.querySelector('.oo-ata-full').style.display=this.querySelector('.oo-ata-full').style.display==='none'?'block':'none'">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span class="tag dt" style="font-size:10px">${formatDate(m.meeting_date)}</span>
+              <span class="oo-topic-text" style="font-weight:500">${m.title||'Reunião'}</span>
+            </div>
+            <div style="font-size:11px;color:var(--t3)">${preview}${preview.length>=120?'...':''}</div>
+            <div class="oo-ata-full" style="display:none;margin-top:8px;font-size:12px;color:var(--t2);line-height:1.7;white-space:pre-line;border-top:1px solid var(--b1);padding-top:8px">${m.ata||'Sem ata disponível.'}</div>
+          </div>
+        </div>`;
+      });
+    } else {
+      html+=`<div style="font-size:12px;color:var(--t4);padding:4px 0">Nenhuma reunião com ${p.name} encontrada.</div>`;
+    }
+    el.innerHTML=html;
+  } catch(e){ console.error('loadOOMeetings:',e); }
 }
 
 function renderOOActions(pid){
