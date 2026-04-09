@@ -1745,6 +1745,7 @@ async function saveOOState(){
       toast('Erro ao salvar: '+res.status,'error');
     } else {
       console.log('saveOO OK:',PEOPLE.length,'people saved');
+      toast('Salvo no Supabase');
     }
   } catch(e){ console.error('saveOO catch:',e); toast('Erro ao salvar','error'); }
 }
@@ -1841,7 +1842,7 @@ function openPersonModal(editId){
   document.getElementById('opm-name').focus();
 }
 
-function savePersonModal(editId){
+async function savePersonModal(editId){
   const name=document.getElementById('opm-name').value.trim();
   const role=document.getElementById('opm-role').value.trim();
   const selEl=document.querySelector('.oo-color-opt.sel');
@@ -1858,8 +1859,11 @@ function savePersonModal(editId){
     oo11[id]={topics:[],actions:[],notes:''};
   }
   document.getElementById('oo-person-modal').remove();
-  saveOOState();
   renderOneOne();
+  // Await save and show result
+  try {
+    await saveOOState();
+  } catch(e){ toast('Erro no save: '+e.message,'error'); }
   if(ooSelected===editId) selectOO(editId);
   toast(editId?'Pessoa atualizada':'Pessoa adicionada');
 }
