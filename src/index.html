@@ -945,7 +945,9 @@ async function doLogout(){
 window.doLogout=doLogout;
 
 let _authLoaded=false;
+let _currentSession=null;
 sb.auth.onAuthStateChange((event, session)=>{
+  _currentSession=session;
   if(session){
     document.getElementById('auth-screen').style.display='none';
     document.getElementById('shell').style.display='flex';
@@ -996,8 +998,8 @@ function dbToTask(r){
 }
 
 async function sbUpsert(t){
-  const { data: { user } }=await sb.auth.getUser();
-  const row={ id:String(t.id), title:t.title, person:t.person, due_date:t.dueDate||null, priority:t.priority, tipo:t.tipo, context:t.context||'', done:t.done, notes:t.notes||'', recurrence:t.recurrence||null, owner_id:user.id };
+  if(!_currentSession){ toast('Sessão expirada','error'); return; }
+  const row={ id:String(t.id), title:t.title, person:t.person, due_date:t.dueDate||null, priority:t.priority, tipo:t.tipo, context:t.context||'', done:t.done, notes:t.notes||'', recurrence:t.recurrence||null, owner_id:_currentSession.user.id };
   const { error }=await sb.from('cmd_tasks').upsert(row,{onConflict:'id'});
   if(error) toast('Erro ao salvar: '+error.message,'error');
 }
@@ -1016,13 +1018,13 @@ async function sbDelete(id){
 }
 
 async function saveMeeting(title, participants, date, transcript, ata, demands){
-  const { data: { user } }=await sb.auth.getUser();
+  if(!_currentSession){ toast('Sessão expirada','error'); return null; }
   const { data: meeting, error }=await sb.from('cmd_meetings').insert({
-    title, participants, meeting_date:date||isoToday, transcript, ata, owner_id:user.id
+    title, participants, meeting_date:date||isoToday, transcript, ata, owner_id:_currentSession.user.id
   }).select().single();
   if(error){ toast('Erro ao salvar reunião','error'); return null; }
   if(demands?.length && meeting){
-    const rows=demands.map(d=>({ meeting_id:meeting.id, task_id:null, title:d.titulo, person:d.responsavel||'lucas', priority:d.prioridade||'media', tipo:d.tipo||'delegada', owner_id:user.id }));
+    const rows=demands.map(d=>({ meeting_id:meeting.id, task_id:null, title:d.titulo, person:d.responsavel||'lucas', priority:d.prioridade||'media', tipo:d.tipo||'delegada', owner_id:_currentSession.user.id }));
     await sb.from('cmd_meeting_demands').insert(rows);
   }
   return meeting;
@@ -1538,7 +1540,7 @@ function mSelTipo(t,el){ mTipo=t; document.querySelectorAll('#task-modal .tbtn')
 async function addTask(){
   const title=document.getElementById('m-title').value.trim();
   if(!title){ toast('Preencha o título','error'); return; }
-  const { data:{ user } }=await sb.auth.getUser();
+  if(!_currentSession){ toast('Sessão expirada','error'); return; }
   const newId=crypto.randomUUID();
   const rec=document.getElementById('m-recurrence').value||null;
   const t={ id:newId, title, person:document.getElementById('m-person').value, dueDate:document.getElementById('m-date').value, priority:mPrio, tipo:mTipo, context:document.getElementById('m-context').value, done:false, notes:'', recurrence:rec };
@@ -1693,11 +1695,11 @@ async function refineWithWhisper(){
   ta.value='Refinando transcrição com Whisper...';
   ta.disabled=true;
   try {
-    const { data:{ session } }=await sb.auth.getSession();
+    if(!_currentSession){ toast('Sessão expirada','error'); return; }
     const fd=new FormData(); fd.append('file',blob,'audio.webm');
     const res=await fetch(`${SB_URL}/functions/v1/transcribe`,{
       method:'POST',
-      headers:{ 'Authorization':'Bearer '+session.access_token },
+      headers:{ 'Authorization':'Bearer '+_currentSession.access_token },
       body:fd
     });
     const data=await res.json();
@@ -1739,10 +1741,10 @@ async function generateAI(){
   const aiArea=document.getElementById('trans-ai-area');
   aiArea.innerHTML=`<div class="ai-loading"><div class="spinner"></div> Gerando ata e demandas com GPT-4o...</div>`;
   try {
-    const { data:{ session } }=await sb.auth.getSession();
+    if(!_currentSession){ toast('Sessão expirada','error'); return; }
     const res=await fetch(`${SB_URL}/functions/v1/ai-meeting`,{
       method:'POST',
-      headers:{ 'Authorization':'Bearer '+session.access_token, 'Content-Type':'application/json' },
+      headers:{ 'Authorization':'Bearer '+_currentSession.access_token, 'Content-Type':'application/json' },
       body:JSON.stringify({ transcript:fullText, title, participants })
     });
     const result=await res.json();
@@ -1799,7 +1801,7 @@ function saveOOLocal(){
 async function saveOOState(){
   saveOOLocal();
   try {
-    const { data:{ session } }=await sb.auth.getSession();
+    const session=_currentSession;
     if(!session){ console.error('saveOO: NO SESSION'); toast('Sessão expirada — faça login novamente','error'); return; }
     const body=JSON.stringify({
       owner_id:session.user.id,
@@ -1846,9 +1848,7 @@ function loadOOFromLocal(){
 async function loadOOFromSupabase(){
   for(let attempt=0; attempt<3; attempt++){
     try {
-      // Verify we have a valid session before querying
-      const { data:{ session } }=await sb.auth.getSession();
-      if(!session){ console.warn('loadOO: no session, attempt',attempt); await new Promise(r=>setTimeout(r,600)); continue; }
+      if(!_currentSession){ console.warn('loadOO: no session, attempt',attempt); await new Promise(r=>setTimeout(r,600)); continue; }
       const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').maybeSingle();
       console.log('loadOO attempt',attempt,': data=',data?'found ('+((data.people||[]).length)+' people)':'null','error=',error?.message||'none');
       if(error){ await new Promise(r=>setTimeout(r,600)); continue; }
@@ -2257,9 +2257,9 @@ async function saveNewMeeting(){
   if(!title){ toast('Preencha o título','error'); return; }
   const participants=partsRaw?partsRaw.split(',').map(s=>s.trim()).filter(Boolean):[];
 
-  const { data:{user} }=await sb.auth.getUser();
+  if(!_currentSession){ toast('Sessão expirada','error'); return; }
   const { data:meeting, error }=await sb.from('cmd_meetings').insert({
-    title, participants, meeting_date:date||isoToday, transcript:'', ata:'', notes:notes, owner_id:user.id
+    title, participants, meeting_date:date||isoToday, transcript:'', ata:'', notes:notes, owner_id:_currentSession.user.id
   }).select().single();
   if(error){ toast('Erro ao criar reunião: '+error.message,'error'); return; }
 
