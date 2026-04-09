@@ -886,24 +886,11 @@ async function doLogin(){
 }
 
 async function doLogout(){
-  try {
-    await sb.auth.signOut();
-    _authLoaded=false;
-    tasks=[];
-    PEOPLE=[...DEFAULT_PEOPLE];
-    oo11={};
-    ooSelected=null;
-    localStorage.removeItem('oo_ver');
-    localStorage.removeItem('oo_people');
-    localStorage.removeItem('oo_data');
-    document.getElementById('shell').style.display='none';
-    document.getElementById('auth-screen').style.display='flex';
-    // Reset login form
-    const btn=document.getElementById('auth-btn');
-    btn.disabled=false; btn.textContent='Entrar';
-    document.getElementById('auth-err').textContent='';
-    document.getElementById('auth-pass').value='';
-  } catch(e){ location.reload(); }
+  localStorage.removeItem('oo_ver');
+  localStorage.removeItem('oo_people');
+  localStorage.removeItem('oo_data');
+  try { await sb.auth.signOut(); } catch(e){}
+  location.reload();
 }
 
 let _authLoaded=false;
