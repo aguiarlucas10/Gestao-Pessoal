@@ -899,6 +899,9 @@ sb.auth.onAuthStateChange(async(event, session)=>{
     if(lb){ lb.disabled=false; lb.textContent='Entrar'; }
     if(!_authLoaded){
       _authLoaded=true;
+      // Force token refresh to avoid expired-token returning empty via RLS
+      const { data:refreshed }=await sb.auth.refreshSession();
+      if(!refreshed.session){ console.warn('Token refresh failed, using existing session'); }
       await loadTasks();
       await loadOOState();
       scheduleNotifCheck();
@@ -2028,11 +2031,15 @@ function init(){
   document.getElementById('topbar-date').textContent=today.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'}).toUpperCase();
   document.getElementById('m-date').value=isoToday;
   document.getElementById('meeting-date').value=isoToday;
-  // Check existing session
-  sb.auth.getSession().then(({data:{session}})=>{
+  // Check existing session — refresh token first to handle expired tokens after restart
+  sb.auth.refreshSession().then(({data:{session}})=>{
     if(!session){
       document.getElementById('auth-screen').style.display='flex';
     }
+  }).catch(()=>{
+    sb.auth.getSession().then(({data:{session}})=>{
+      if(!session) document.getElementById('auth-screen').style.display='flex';
+    });
   });
 }
 init();
