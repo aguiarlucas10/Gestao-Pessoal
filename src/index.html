@@ -232,7 +232,9 @@ body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--t1)}
 #view-people{flex-direction:column}
 .people-toolbar{padding:12px 24px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:12px;flex-shrink:0;background:var(--s1)}
 .people-board{flex:1;overflow-x:auto;overflow-y:hidden;display:flex;gap:14px;padding:16px 20px;align-items:flex-start}
-.person-col{flex-shrink:0;width:300px;display:flex;flex-direction:column;max-height:100%}
+.person-col{flex-shrink:0;width:300px;display:flex;flex-direction:column;max-height:100%;transition:opacity .15s}
+.person-col.dragging{opacity:.35;outline:2px dashed var(--acc);outline-offset:-2px;border-radius:var(--r2)}
+.person-col.drag-over-col{outline:2px solid var(--acc);outline-offset:-2px;border-radius:var(--r2)}
 .person-col-head{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2) var(--r2) 0 0;border-bottom:none}
 .big-av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}
 .person-col-name{font-size:13px;font-weight:600}
@@ -1388,9 +1390,10 @@ function setPeopleFilter(f,el){ peopleFilter=f; document.querySelectorAll('#view
 // ══════════════════════════════════════════════
 // PEOPLE VIEW
 // ══════════════════════════════════════════════
+let peopleDragIdx=null;
 function renderPeople(){
   const wrap=document.getElementById('people-board'); wrap.innerHTML='';
-  PEOPLE.forEach(p=>{
+  PEOPLE.forEach((p,idx)=>{
     let pt=tasks.filter(t=>t.person===p.id&&!t.done);
     if(peopleFilter==='alta') pt=pt.filter(t=>t.priority==='alta');
     if(peopleFilter==='media') pt=pt.filter(t=>t.priority==='media');
@@ -1399,8 +1402,23 @@ function renderPeople(){
     pt.sort((a,b)=>(a.dueDate||'9999')>(b.dueDate||'9999')?1:-1);
     const done=tasks.filter(t=>t.person===p.id&&t.done);
     const col=document.createElement('div'); col.className='person-col';
+    col.draggable=true;
+    col.dataset.idx=idx;
+    col.addEventListener('dragstart',e=>{ peopleDragIdx=idx; col.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
+    col.addEventListener('dragend',()=>{ col.classList.remove('dragging'); document.querySelectorAll('.drag-over-col').forEach(el=>el.classList.remove('drag-over-col')); });
+    col.addEventListener('dragover',e=>{ e.preventDefault(); col.classList.add('drag-over-col'); });
+    col.addEventListener('dragleave',()=>col.classList.remove('drag-over-col'));
+    col.addEventListener('drop',e=>{
+      e.preventDefault(); col.classList.remove('drag-over-col');
+      if(peopleDragIdx===null||peopleDragIdx===idx) return;
+      const [moved]=PEOPLE.splice(peopleDragIdx,1);
+      PEOPLE.splice(idx,0,moved);
+      peopleDragIdx=null;
+      saveOOState();
+      renderPeople();
+    });
     col.innerHTML=`
-      <div class="person-col-head"><div class="big-av" style="background:${p.bg};color:${p.color}">${p.init}</div>
+      <div class="person-col-head" style="cursor:grab"><div class="big-av" style="background:${p.bg};color:${p.color}">${p.init}</div>
         <div style="flex:1;min-width:0"><div class="person-col-name">${p.name}</div><div class="person-col-sub">${p.role}</div></div>
         <div class="col-ct">${pt.length}</div>
       </div>
