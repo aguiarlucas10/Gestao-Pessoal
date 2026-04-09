@@ -882,8 +882,9 @@ async function doLogout(){
   localStorage.removeItem('oo_people');
   localStorage.removeItem('oo_data');
   try { await sb.auth.signOut(); } catch(e){}
-  location.reload();
+  window.location.reload();
 }
+window.doLogout=doLogout;
 
 let _authLoaded=false;
 sb.auth.onAuthStateChange(async(event, session)=>{
@@ -1834,11 +1835,10 @@ function openPersonModal(editId){
         </div></div>
         <div class="oo-modal-btns">
           <button class="btn-sm" onclick="document.getElementById('oo-person-modal').remove()">Cancelar</button>
-          <button class="btn-sm primary" id="opm-save-btn">Salvar</button>
+          <button class="btn-sm primary" onclick="savePersonModal('${eid}')">Salvar</button>
         </div>
       </div>
     </div>`);
-  document.getElementById('opm-save-btn').addEventListener('click',()=>savePersonModal(eid));
   document.getElementById('opm-name').focus();
 }
 
@@ -1867,6 +1867,7 @@ async function savePersonModal(editId){
   if(ooSelected===editId) selectOO(editId);
   toast(editId?'Pessoa atualizada':'Pessoa adicionada');
 }
+window.savePersonModal=savePersonModal;
 
 function toggleHidePerson(pid){
   const p=PEOPLE.find(x=>x.id===pid);
