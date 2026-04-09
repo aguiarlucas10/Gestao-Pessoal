@@ -455,6 +455,54 @@ select.modal-input{cursor:pointer}
 
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 .card{animation:fadeIn .25s ease both}
+
+/* ── HAMBURGER ── */
+.nav-toggle{display:none;background:none;border:none;color:var(--t1);font-size:20px;cursor:pointer;padding:8px 12px;position:fixed;top:8px;left:8px;z-index:201}
+
+/* ── RESPONSIVE ── */
+@media(max-width:1024px){
+  .nav{width:200px}
+  .trans-right{width:320px}
+  .oneone-list{width:240px}
+  .side-panel.open{width:300px}
+}
+@media(max-width:768px){
+  .nav-toggle{display:block}
+  .nav{position:fixed;left:-260px;top:0;bottom:0;width:240px;z-index:200;transition:left .25s ease;box-shadow:none}
+  .nav.open{left:0;box-shadow:4px 0 30px rgba(0,0,0,.5)}
+  .nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:199}
+  .nav-overlay.open{display:block}
+  .topbar{padding-left:48px}
+  .board-columns{gap:12px}
+  .col{min-width:260px}
+  /* Transcription: stack vertically */
+  .trans-layout{flex-direction:column}
+  .trans-left{border-right:none;border-bottom:1px solid var(--b1)}
+  .trans-right{width:100%;max-height:40vh}
+  .trans-meta{flex-wrap:wrap}
+  /* 1:1: stack vertically */
+  #view-11{flex-direction:column}
+  .oneone-list{width:100%;border-right:none;border-bottom:1px solid var(--b1);max-height:200px}
+  .oneone-items{flex-direction:row;overflow-x:auto;overflow-y:hidden}
+  .oo-person{flex-shrink:0;min-width:180px}
+  /* Side panel full-screen */
+  .side-panel.open{position:fixed;left:0;top:0;bottom:0;width:100%;z-index:150}
+  /* Modal */
+  .modal{width:95vw;padding:20px}
+  .briefing{width:95vw}
+  /* People view horizontal scroll */
+  .people-board{gap:12px}
+  .people-col{min-width:260px}
+  /* Calendar month: smaller cells */
+  .cal-day{min-height:60px;padding:3px}
+}
+@media(max-width:480px){
+  .board-toolbar{flex-wrap:wrap;gap:6px}
+  .fchip{font-size:10px;padding:4px 8px}
+  .topbar{padding:10px 12px 10px 48px}
+  .col{min-width:220px}
+  .oo-person{min-width:150px}
+}
 </style>
 </head>
 <body>
@@ -482,8 +530,12 @@ select.modal-input{cursor:pointer}
 <!-- SHELL -->
 <div class="shell" id="shell" style="display:none">
 
+  <!-- NAV MOBILE -->
+  <button class="nav-toggle" id="nav-toggle" onclick="toggleNav()">☰</button>
+  <div class="nav-overlay" id="nav-overlay" onclick="toggleNav()"></div>
+
   <!-- NAV -->
-  <nav class="nav">
+  <nav class="nav" id="main-nav">
     <div class="nav-brand">
       <div class="brand-name">CMD<em>.</em>CENTER</div>
       <div class="brand-sub">Saint Germain · Lucas</div>
@@ -1106,6 +1158,13 @@ function switchNav(view, el){
   if(view==='calendar') renderCal();
   if(view==='people') renderPeople();
   if(view==='11') renderOneOne();
+  // Close mobile nav
+  if(window.innerWidth<=768){ document.getElementById('main-nav').classList.remove('open'); document.getElementById('nav-overlay').classList.remove('open'); }
+}
+
+function toggleNav(){
+  document.getElementById('main-nav').classList.toggle('open');
+  document.getElementById('nav-overlay').classList.toggle('open');
 }
 
 function updateBadge(){
