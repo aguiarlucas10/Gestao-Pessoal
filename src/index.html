@@ -887,7 +887,7 @@ async function doLogout(){
 window.doLogout=doLogout;
 
 let _authLoaded=false;
-sb.auth.onAuthStateChange(async(event, session)=>{
+sb.auth.onAuthStateChange((event, session)=>{
   console.log('[AUTH]', event, 'session?', !!session, 'uid:', session?.user?.id);
   if(session){
     document.getElementById('auth-screen').style.display='none';
@@ -900,12 +900,15 @@ sb.auth.onAuthStateChange(async(event, session)=>{
     if(lb){ lb.disabled=false; lb.textContent='Entrar'; }
     if(!_authLoaded){
       _authLoaded=true;
-      await loadTasks();
-      console.log('[LOAD] tasks loaded:', tasks.length);
-      await loadOOState();
-      console.log('[LOAD] PEOPLE loaded:', PEOPLE.length);
-      scheduleNotifCheck();
-      showBriefing();
+      // Load data outside onAuthStateChange to avoid deadlock with Supabase internal auth lock
+      setTimeout(async()=>{
+        await loadTasks();
+        console.log('[LOAD] tasks loaded:', tasks.length);
+        await loadOOState();
+        console.log('[LOAD] PEOPLE loaded:', PEOPLE.length);
+        scheduleNotifCheck();
+        showBriefing();
+      },0);
     }
   } else {
     _authLoaded=false;
