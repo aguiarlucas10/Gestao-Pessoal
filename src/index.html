@@ -939,12 +939,18 @@ sb.auth.onAuthStateChange(async(event, session)=>{
 // SUPABASE CRUD
 // ══════════════════════════════════════════════
 async function loadTasks(){
-  const { data, error }=await sb.from('cmd_tasks').select('*').order('created_at',{ascending:false});
-  if(error){ toast('Erro ao carregar: '+error.message,'error'); return; }
-  tasks=(data||[]).map(dbToTask);
-  renderBoard(); renderCal(); renderPeople();
-  checkNotifications();
-  updateBadge();
+  for(let attempt=0; attempt<2; attempt++){
+    try {
+      const { data, error }=await sb.from('cmd_tasks').select('*').order('created_at',{ascending:false});
+      if(error){ console.warn('loadTasks attempt',attempt,error.message); if(attempt===0){ await new Promise(r=>setTimeout(r,500)); continue; } toast('Erro ao carregar tarefas: '+error.message,'error'); return; }
+      tasks=(data||[]).map(dbToTask);
+      renderBoard(); renderCal(); renderPeople();
+      checkNotifications();
+      updateBadge();
+      return;
+    } catch(e){ console.warn('loadTasks catch',attempt,e); if(attempt===0) await new Promise(r=>setTimeout(r,500)); }
+  }
+  toast('Falha ao carregar tarefas. Verifique sua conexão.','error');
 }
 
 function dbToTask(r){
@@ -1246,7 +1252,7 @@ function cardHTML(t){
         <div class="card-check" onclick="event.stopPropagation();toggleDone('${t.id}')"></div>
       </div>
       <div class="card-tags">
-        <span class="tag ${t.priority}">${t.priority.toUpperCase()}</span>
+        <span class="tag ${t.priority}">${t.priority==='alta'?'▲':t.priority==='media'?'●':'▼'} ${t.priority.toUpperCase()}</span>
         <span class="tag ${t.tipo}">${t.tipo==='minha'?'Eu faço':'Delegada'}</span>
         ${t.context?`<span class="tag origem">${t.context}</span>`:''}
         <span class="tag dt ${over?'overdue':tod?'overdue':''}">${over?'⚠ ':tod?'★ ':''}${formatDate(t.dueDate)}</span>
