@@ -919,8 +919,10 @@ sb.auth.onAuthStateChange(async(event, session)=>{
 // SUPABASE CRUD
 // ══════════════════════════════════════════════
 async function loadTasks(){
+  console.log('[loadTasks] CALLED');
   for(let attempt=0; attempt<2; attempt++){
     try {
+      console.log('[loadTasks] querying attempt',attempt);
       const { data, error, status }=await sb.from('cmd_tasks').select('*').order('created_at',{ascending:false});
       console.log('[loadTasks] attempt',attempt,'status:',status,'rows:',data?.length,'error:',error?.message||'none');
       if(error){ console.warn('loadTasks attempt',attempt,error.message); if(attempt===0){ await new Promise(r=>setTimeout(r,500)); continue; } toast('Erro ao carregar tarefas: '+error.message,'error'); return; }
@@ -2032,15 +2034,11 @@ function init(){
   document.getElementById('topbar-date').textContent=today.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'}).toUpperCase();
   document.getElementById('m-date').value=isoToday;
   document.getElementById('meeting-date').value=isoToday;
-  // Check existing session — refresh token first to handle expired tokens after restart
-  sb.auth.refreshSession().then(({data:{session}})=>{
+  // Check existing session
+  sb.auth.getSession().then(({data:{session}})=>{
     if(!session){
       document.getElementById('auth-screen').style.display='flex';
     }
-  }).catch(()=>{
-    sb.auth.getSession().then(({data:{session}})=>{
-      if(!session) document.getElementById('auth-screen').style.display='flex';
-    });
   });
 }
 init();
