@@ -900,10 +900,6 @@ sb.auth.onAuthStateChange(async(event, session)=>{
     if(lb){ lb.disabled=false; lb.textContent='Entrar'; }
     if(!_authLoaded){
       _authLoaded=true;
-      // Force token refresh to avoid expired-token returning empty via RLS
-      const { data:refreshed }=await sb.auth.refreshSession();
-      console.log('[AUTH] refreshSession:', !!refreshed.session);
-      if(!refreshed.session){ console.warn('Token refresh failed, using existing session'); }
       await loadTasks();
       console.log('[LOAD] tasks loaded:', tasks.length);
       await loadOOState();
@@ -925,7 +921,8 @@ sb.auth.onAuthStateChange(async(event, session)=>{
 async function loadTasks(){
   for(let attempt=0; attempt<2; attempt++){
     try {
-      const { data, error }=await sb.from('cmd_tasks').select('*').order('created_at',{ascending:false});
+      const { data, error, status }=await sb.from('cmd_tasks').select('*').order('created_at',{ascending:false});
+      console.log('[loadTasks] attempt',attempt,'status:',status,'rows:',data?.length,'error:',error?.message||'none');
       if(error){ console.warn('loadTasks attempt',attempt,error.message); if(attempt===0){ await new Promise(r=>setTimeout(r,500)); continue; } toast('Erro ao carregar tarefas: '+error.message,'error'); return; }
       tasks=(data||[]).map(dbToTask);
       renderBoard(); renderCal(); renderPeople();
