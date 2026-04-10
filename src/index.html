@@ -404,9 +404,10 @@ body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--t1)}
 .oo-color-opt{width:24px;height:24px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all .15s}
 .oo-color-opt:hover,.oo-color-opt.sel{border-color:white;transform:scale(1.15)}
 
-/* ── SIDE PANEL ── */
-.side-panel{width:0;flex-shrink:0;overflow:hidden;border-left:1px solid transparent;display:flex;flex-direction:column;background:var(--s1);transition:width .25s ease}
-.side-panel.open{width:320px;border-color:var(--b1)}
+/* ── DETAIL MODAL ── */
+.detail-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:500;align-items:center;justify-content:center}
+.detail-overlay.open{display:flex}
+.side-panel{width:420px;max-width:92vw;max-height:85vh;border-radius:14px;display:flex;flex-direction:column;background:var(--s1);border:1px solid var(--b1);box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .sp-head{padding:16px 18px;border-bottom:1px solid var(--b1);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .sp-title{font-size:13px;font-weight:600;color:var(--t2)}
 .sp-close{width:26px;height:26px;border-radius:6px;border:1px solid var(--b1);background:transparent;color:var(--t2);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all .15s}
@@ -497,7 +498,6 @@ select.modal-input{cursor:pointer}
   .nav{width:200px}
   .trans-right{width:320px}
   .oneone-list{width:240px}
-  .side-panel.open{width:300px}
 }
 @media(max-width:768px){
   .nav-toggle{display:block}
@@ -523,8 +523,6 @@ select.modal-input{cursor:pointer}
   .reun-list{width:100%;border-right:none;border-bottom:1px solid var(--b1);max-height:200px}
   .reun-items{flex-direction:row;overflow-x:auto;overflow-y:hidden}
   .reun-card{flex-shrink:0;min-width:200px}
-  /* Side panel full-screen */
-  .side-panel.open{position:fixed;left:0;top:0;bottom:0;width:100%;z-index:150}
   /* Modal */
   .modal{width:95vw;padding:20px}
   .briefing{width:95vw}
@@ -781,15 +779,17 @@ select.modal-input{cursor:pointer}
         </div>
       </div>
 
-      <!-- GLOBAL SIDE PANEL (task details) -->
-      <div class="side-panel" id="side-panel">
-        <div class="sp-head"><span class="sp-title">Detalhes</span><button class="sp-close" onclick="closePanel()">✕</button></div>
-        <div class="sp-body" id="sp-body"></div>
-      </div>
-
     </div><!-- /content -->
   </div><!-- /workspace -->
 </div><!-- /shell -->
+
+<!-- DETAIL MODAL -->
+<div class="detail-overlay" id="detail-overlay" onclick="if(event.target===this)closePanel()">
+  <div class="side-panel" id="side-panel">
+    <div class="sp-head"><span class="sp-title">Detalhes</span><button class="sp-close" onclick="closePanel()">✕</button></div>
+    <div class="sp-body" id="sp-body"></div>
+  </div>
+</div>
 
 <!-- TASK MODAL -->
 <div class="modal-overlay" id="task-modal" onclick="closeModalOut(event,'task-modal')">
@@ -1341,7 +1341,7 @@ async function toggleDone(id){
 // ══════════════════════════════════════════════
 function openPanel(id){
   const t=tasks.find(t=>t.id===id); if(!t) return;
-  document.getElementById('side-panel').classList.add('open');
+  document.getElementById('detail-overlay').classList.add('open');
   document.getElementById('sp-body').innerHTML=`
     <div class="sp-field"><div class="sp-label">Título</div><div class="sp-val" contenteditable="true" onblur="updateField('${id}','title',this.textContent.trim())">${t.title}</div></div>
     <div class="sp-field"><div class="sp-label">Prioridade</div>
@@ -1368,7 +1368,7 @@ function openPanel(id){
   `;
 }
 
-function closePanel(){ document.getElementById('side-panel').classList.remove('open'); }
+function closePanel(){ document.getElementById('detail-overlay').classList.remove('open'); }
 
 async function updateField(id, field, val){
   const t=tasks.find(t=>t.id===id); if(!t) return;
