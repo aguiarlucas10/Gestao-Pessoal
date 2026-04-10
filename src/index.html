@@ -1474,7 +1474,7 @@ function renderCal(){
     for(let d=1;d<=dim;d++){
       const cd=isoDate(new Date(yr,mo,d)), isT=cd===isoToday;
       const dt=tasks.filter(t=>t.dueDate===cd&&!t.done).sort((a,b)=>a.priority==='alta'?-1:1);
-      html+=`<div class="cal-cell ${isT?'today':''}" onclick="openTaskModal(null,null,'${cd}')"><span class="cal-day-num">${d}</span>`;
+      html+=`<div class="cal-cell ${isT?'today':''}" onclick="openCalDayPopup('${cd}',${d})"><span class="cal-day-num">${d}</span>`;
       dt.slice(0,3).forEach(t=>{ html+=`<div class="cal-task-pill ${t.priority}" onclick="event.stopPropagation();openPanel('${t.id}')">${t.title}</div>`; });
       if(dt.length>3) html+=`<div class="cal-more">+${dt.length-3} mais</div>`;
       html+=`</div>`;
@@ -1509,6 +1509,52 @@ function renderCal(){
     }
     html+=`</div></div>`; body.innerHTML=html;
   }
+}
+
+function openCalDayPopup(dateStr, dayNum){
+  const dt=tasks.filter(t=>t.dueDate===dateStr&&!t.done).sort((a,b)=>a.priority==='alta'?-1:1);
+  const done=tasks.filter(t=>t.dueDate===dateStr&&t.done);
+  const dateLabel=new Date(dateStr+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});
+
+  let html=dt.map(t=>{
+    const p=person(t.person);
+    return `<div class="card p-${t.priority} t-${t.tipo}" onclick="event.stopPropagation();document.getElementById('cal-day-popup').remove();openPanel('${t.id}')" style="margin-bottom:6px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:7px">
+        <div class="card-title">${t.title}</div>
+        <div class="card-check" onclick="event.stopPropagation();toggleDone('${t.id}');document.getElementById('cal-day-popup')?.remove()"></div>
+      </div>
+      <div class="card-tags">
+        <span class="tag ${t.priority}">${t.priority==='alta'?'▲':t.priority==='media'?'●':'▼'} ${t.priority.toUpperCase()}</span>
+        ${t.context?`<span class="tag origem">${t.context}</span>`:''}
+      </div>
+      <div class="card-foot"><div class="card-person">${av(p,16)} ${p.name}</div></div>
+    </div>`;
+  }).join('');
+
+  if(done.length){
+    html+=`<div class="done-sep" style="margin:6px 0">✓ Concluídas (${done.length})</div>`;
+    done.forEach(t=>{
+      html+=`<div class="card" style="opacity:.4;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px"><div class="card-title" style="text-decoration:line-through;color:var(--t3)">${t.title}</div></div></div>`;
+    });
+  }
+
+  if(!dt.length && !done.length){
+    html=`<div style="text-align:center;color:var(--t4);padding:16px 0;font-size:12px">Nenhuma tarefa neste dia</div>`;
+  }
+
+  document.body.insertAdjacentHTML('beforeend',`
+    <div class="detail-overlay open" id="cal-day-popup" onclick="if(event.target===this)this.remove()">
+      <div class="side-panel" style="width:380px">
+        <div class="sp-head">
+          <span class="sp-title" style="text-transform:capitalize">${dateLabel}</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="oo-manage-btn" onclick="event.stopPropagation();document.getElementById('cal-day-popup').remove();openTaskModal(null,null,'${dateStr}')" title="Nova tarefa">+</button>
+            <button class="sp-close" onclick="document.getElementById('cal-day-popup').remove()">✕</button>
+          </div>
+        </div>
+        <div class="sp-body">${html}</div>
+      </div>
+    </div>`);
 }
 
 // ══════════════════════════════════════════════
