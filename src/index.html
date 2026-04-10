@@ -1532,6 +1532,7 @@ function openTaskModal(_, personHint, dateHint){
   if(dateHint) document.getElementById('m-date').value=dateHint;
   else document.getElementById('m-date').value=isoToday;
   openModal('task-modal');
+  setTimeout(()=>document.getElementById('m-title').focus(),50);
 }
 function openModal(id){ document.getElementById(id).classList.add('open'); }
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
