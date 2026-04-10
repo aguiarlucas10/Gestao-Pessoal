@@ -174,6 +174,7 @@ body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--t1)}
 .col-body::-webkit-scrollbar-thumb{background:var(--b2);border-radius:99px}
 
 .card{background:var(--bg);border:1px solid var(--b1);border-radius:9px;padding:11px 12px;cursor:pointer;transition:all .2s;position:relative;overflow:hidden}
+.card.t-delegada{background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.08)}
 .card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
 .card.p-alta::before{background:var(--red)}
 .card.p-media::before{background:var(--org)}
@@ -1289,14 +1290,13 @@ function cardHTML(t){
   const over=isOverdue(t.dueDate), tod=isToday(t.dueDate);
   const fub=followupBadge(t);
   return `
-    <div class="card p-${t.priority}" onclick="openPanel('${t.id}')">
+    <div class="card p-${t.priority} t-${t.tipo}" onclick="openPanel('${t.id}')">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:7px">
         <div class="card-title">${t.title}</div>
         <div class="card-check" onclick="event.stopPropagation();toggleDone('${t.id}')"></div>
       </div>
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority==='alta'?'▲':t.priority==='media'?'●':'▼'} ${t.priority.toUpperCase()}</span>
-        <span class="tag ${t.tipo}">${t.tipo==='minha'?'Eu faço':'Delegada'}</span>
         ${t.context?`<span class="tag origem">${t.context}</span>`:''}
         <span class="tag dt ${over?'overdue':tod?'overdue':''}">${over?'⚠ ':tod?'★ ':''}${formatDate(t.dueDate)}</span>
         ${fub}
@@ -1440,14 +1440,13 @@ function renderPeople(){
 function personCardHTML(t){
   const over=isOverdue(t.dueDate), tod=isToday(t.dueDate);
   return `
-    <div class="card p-${t.priority}" onclick="openPanel('${t.id}')">
+    <div class="card p-${t.priority} t-${t.tipo}" onclick="openPanel('${t.id}')">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:7px">
         <div class="card-title">${t.title}</div>
         <div class="card-check" onclick="event.stopPropagation();toggleDone('${t.id}')"></div>
       </div>
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority.toUpperCase()}</span>
-        <span class="tag ${t.tipo}">${t.tipo==='minha'?'Eu faço':'Delegada'}</span>
         <span class="tag dt ${over||tod?'overdue':''}">${over?'⚠ ':tod?'★ ':''}${formatDate(t.dueDate)}</span>
         ${t.context?`<span class="tag origem">${t.context}</span>`:''}
       </div>
