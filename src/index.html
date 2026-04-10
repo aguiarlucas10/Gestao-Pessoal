@@ -964,8 +964,8 @@ sb.auth.onAuthStateChange((event, session)=>{
       _authLoaded=true;
       // Load data outside onAuthStateChange to avoid deadlock with Supabase internal auth lock
       setTimeout(async()=>{
-        await loadTasks();
         await loadOOState();
+        await loadTasks();
         scheduleNotifCheck();
         showBriefing();
       },0);
