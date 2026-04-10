@@ -1558,8 +1558,9 @@ async function addTask(){
 // ══════════════════════════════════════════════
 // TRANSCRIPTION (via Edge Function — sem key exposta)
 // ══════════════════════════════════════════════
-let recStream2=null, speechRec=null, isRecording=false;
+let recStream2=null, isRecording=false, whisperProcessing=false;
 let audioChunks=[];
+let recMimeType='audio/webm';
 
 function getTransText(){ return document.getElementById('trans-text'); }
 function getTranscriptContent(){ return getTransText().value.trim(); }
@@ -1576,85 +1577,67 @@ function showTransTextarea(){
   ta.style.display='block';
 }
 
+async function sendChunkToWhisper(chunk){
+  if(!_currentSession) return;
+  const liveEl=document.getElementById('trans-live-text');
+  try {
+    whisperProcessing=true;
+    if(liveEl) liveEl.textContent='Transcrevendo...';
+    const blob=new Blob([chunk],{type:recMimeType});
+    if(blob.size<1000) return;
+    const fd=new FormData();
+    fd.append('file',blob,'chunk.webm');
+    const res=await fetch(`${SB_URL}/functions/v1/transcribe`,{
+      method:'POST',
+      headers:{ 'Authorization':'Bearer '+_currentSession.access_token },
+      body:fd
+    });
+    const data=await res.json();
+    if(data.text?.trim()){
+      const ta=getTransText();
+      const sep=ta.value && !ta.value.endsWith('\n') && !ta.value.endsWith(' ')?' ':'';
+      ta.value+=sep+data.text.trim();
+      ta.scrollTop=ta.scrollHeight;
+      updateWordCount();
+      transcriptLines=[{id:'full',time:'',text:ta.value}];
+    }
+  } catch(e){ console.warn('Whisper chunk error:',e); }
+  finally {
+    whisperProcessing=false;
+    if(liveEl && isRecording) liveEl.textContent='Ouvindo...';
+  }
+}
+
 async function toggleRecording(){
   const btn=document.getElementById('rec-btn');
   if(!isRecording){
     try {
-      const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-      if(!SpeechRecognition){
-        // Fallback: record audio only, send to Whisper when stopped
-        try {
-          recStream2=await navigator.mediaDevices.getUserMedia({audio:true});
-          const mt=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
-          mediaRecorder=new MediaRecorder(recStream2,{mimeType:mt});
-          audioChunks=[];
-          mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) audioChunks.push(e.data); };
-          mediaRecorder.start(10000);
-          isRecording=true;
-          showTransTextarea();
-          getTransText().value='Gravando áudio... Ao parar, o texto será transcrito automaticamente via Whisper.';
-          btn.className='rec-btn recording';
-          document.getElementById('rec-label').textContent='Parar Gravação';
-          document.getElementById('rec-timer').style.display='block';
-          startTimer();
-          toast('Gravando áudio (Whisper transcreverá ao parar)');
-        } catch(e){ toast('Microfone bloqueado: '+e.message,'error'); }
-        return;
-      }
-
-      speechRec=new SpeechRecognition();
-      speechRec.continuous=true;
-      speechRec.interimResults=true;
-      speechRec.lang='pt-BR';
-      speechRec.maxAlternatives=1;
-
-      speechRec.onresult=(e)=>{
-        let interim='', finalText='';
-        for(let i=e.resultIndex;i<e.results.length;i++){
-          const t=e.results[i][0].transcript;
-          if(e.results[i].isFinal) finalText+=t;
-          else interim+=t;
-        }
-        if(finalText.trim()){
-          const ta=getTransText();
-          const sep=ta.value && !ta.value.endsWith('\n') && !ta.value.endsWith(' ')?' ':'';
-          ta.value+=sep+finalText.trim();
-          ta.scrollTop=ta.scrollHeight;
-          updateWordCount();
-          transcriptLines=[{id:'full',time:'',text:ta.value}];
-        }
-        const liveEl=document.getElementById('trans-live-text');
-        if(liveEl) liveEl.textContent=interim.trim()||'Ouvindo...';
-      };
-
-      speechRec.onerror=(e)=>{
-        if(e.error==='no-speech'||e.error==='aborted'||e.error==='audio-capture') return;
-        toast('Erro no reconhecimento: '+e.error,'error');
-      };
-
-      speechRec.onend=()=>{
-        if(isRecording){ try{ speechRec.start(); }catch(ex){} }
-      };
-
-      // Capture mic FIRST, then start speech recognition
       recStream2=await navigator.mediaDevices.getUserMedia({audio:true});
-      const mt=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
-      mediaRecorder=new MediaRecorder(recStream2,{mimeType:mt});
+      recMimeType=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
+      mediaRecorder=new MediaRecorder(recStream2,{mimeType:recMimeType});
       audioChunks=[];
-      mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) audioChunks.push(e.data); };
-      mediaRecorder.start(10000);
 
-      speechRec.start();
+      mediaRecorder.ondataavailable=e=>{
+        if(e.data.size>0){
+          audioChunks.push(e.data);
+          sendChunkToWhisper(e.data);
+        }
+      };
+
+      mediaRecorder.start(30000); // chunk a cada 30s
       isRecording=true;
 
       showTransTextarea();
+      getTransText().value='';
       btn.className='rec-btn recording';
       document.getElementById('rec-label').textContent='Parar Gravação';
       document.getElementById('rec-timer').style.display='block';
       document.getElementById('trans-live-bar').style.display='flex';
+      const liveEl=document.getElementById('trans-live-text');
+      if(liveEl) liveEl.textContent='Ouvindo...';
       startTimer();
-      toast('Transcrição em tempo real iniciada');
-    } catch(e){ toast('Erro: '+e.message,'error'); }
+      toast('Gravando — Whisper transcreve a cada 30s');
+    } catch(e){ toast('Microfone bloqueado: '+e.message,'error'); }
   } else {
     stopRec();
     btn.className='rec-btn idle';
@@ -1664,8 +1647,6 @@ async function toggleRecording(){
     clearInterval(recInterval);
     updateWordCount();
     toast('Gravação finalizada — edite o texto e clique em Gerar com IA');
-    // Auto-refine with Whisper if no SpeechRecognition was used (fallback mode)
-    if(!speechRec && audioChunks.length) refineWithWhisper();
   }
 }
 
@@ -1681,7 +1662,6 @@ function startTimer(){
 
 function stopRec(){
   isRecording=false;
-  if(speechRec){ try{ speechRec.stop(); }catch(ex){} speechRec=null; }
   if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
   if(recStream2){ recStream2.getTracks().forEach(t=>t.stop()); recStream2=null; }
   mediaRecorder=null;
