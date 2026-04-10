@@ -2115,7 +2115,8 @@ function renderMeetingsList(){
     const d=m.meeting_date?new Date(m.meeting_date+'T12:00:00'):new Date();
     const day=String(d.getDate()).padStart(2,'0');
     const mon=d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','');
-    const parts=(m.participants||[]).join(', ')||'Sem participantes';
+    const pArr=Array.isArray(m.participants)?m.participants:typeof m.participants==='string'?m.participants.split(',').map(s=>s.trim()).filter(Boolean):[];
+    const parts=pArr.join(', ')||'Sem participantes';
     return `<div class="reun-card ${reunSelected===m.id?'active':''}" onclick="selectMeeting('${m.id}')">
       <div class="reun-card-date"><div class="reun-card-day">${day}</div><div class="reun-card-mon">${mon}</div></div>
       <div class="reun-card-info"><div class="reun-card-title">${m.title||'Reunião'}</div><div class="reun-card-sub">${parts}</div></div>
@@ -2137,7 +2138,8 @@ async function selectMeeting(id){
   // Find related tasks from main board
   const relatedTasks=tasks.filter(t=> demandList.some(d=>d.task_id===t.id) || (t.context||'').toLowerCase().includes((m.title||'').toLowerCase()));
 
-  const partsHtml=(m.participants||[]).map((p,i)=>{
+  const mParts=Array.isArray(m.participants)?m.participants:typeof m.participants==='string'?m.participants.split(',').map(s=>s.trim()).filter(Boolean):[];
+  const partsHtml=mParts.map((p,i)=>{
     const colors=['#4f7cff','#2dce89','#ff8c42','#a78bfa','#ff4d6d','#ffd166','#36d6c3','#f472b6'];
     const c=colors[i%colors.length];
     const init=p.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
