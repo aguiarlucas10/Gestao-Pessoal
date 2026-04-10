@@ -196,7 +196,7 @@ body{font-family:'Geist',sans-serif;background:var(--bg);color:var(--t1)}
 .card-check{width:15px;height:15px;border:1.5px solid var(--b2);border-radius:4px;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .card-check:hover{border-color:var(--acc)}
 .card-check.done{background:var(--grn);border-color:var(--grn)}
-.col-add{display:flex;align-items:center;gap:6px;padding:7px 9px;border-radius:8px;font-size:11px;color:var(--t4);cursor:pointer;transition:all .15s;border:1px dashed transparent;margin-top:2px}
+.col-add{display:flex;align-items:center;gap:6px;padding:7px 9px;border-radius:0;font-size:11px;color:var(--t4);cursor:pointer;transition:all .15s;border:none;border-bottom:1px solid var(--b1);flex-shrink:0}
 .col-add:hover{color:var(--t2);border-color:var(--b1);background:var(--s3)}
 .done-sep{font-family:'Geist Mono',monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--t4);padding:6px 4px 2px;margin-top:4px}
 
@@ -1262,13 +1262,13 @@ function renderBoard(){
     col.className='col';
     col.innerHTML=`
       <div class="col-head"><div class="col-head-left"><div class="col-dot" style="background:${cc.color}"></div><span class="col-name">${cc.label}</span></div><span class="col-ct">${open.length}</span></div>
+      <div class="col-add" onclick="openTaskModal()">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Adicionar
+      </div>
       <div class="col-body">
         ${open.map(cardHTML).join('')}
         ${done.length?`<div class="done-sep">✓ Concluídas (${done.length})</div>${done.map(cardDoneHTML).join('')}`:''}
-        <div class="col-add" onclick="openTaskModal()">
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          Adicionar
-        </div>
       </div>`;
     wrap.appendChild(col);
   });
@@ -1426,12 +1426,12 @@ function renderPeople(){
         <div style="flex:1;min-width:0"><div class="person-col-name">${p.name}</div><div class="person-col-sub">${p.role}</div></div>
         <div class="col-ct">${pt.length}</div>
       </div>
+      <div class="col-add" onclick="openTaskModal(null,'${p.id}')">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Adicionar
+      </div>
       <div class="person-col-body">
         ${pt.map(t=>personCardHTML(t)).join('')}
         ${done.length?`<div class="done-sep">✓ Concluídas (${done.length})</div>${done.slice(0,2).map(cardDoneHTML).join('')}`:''}
-        <div class="col-add" onclick="openTaskModal(null,'${p.id}')">
-          <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Adicionar
-        </div>
       </div>`;
     wrap.appendChild(col);
   });
