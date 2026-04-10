@@ -1607,6 +1607,7 @@ async function addTask(){
 let recStream2=null, isRecording=false, whisperProcessing=false;
 let audioChunks=[];
 let recMimeType='audio/webm';
+let whisperInterval=null;
 
 function getTransText(){ return document.getElementById('trans-text'); }
 function getTranscriptContent(){ return getTransText().value.trim(); }
@@ -1623,21 +1624,20 @@ function showTransTextarea(){
   ta.style.display='block';
 }
 
-async function sendChunkToWhisper(chunk){
-  if(!_currentSession) return;
+async function sendBlobToWhisper(blob){
+  if(!_currentSession||blob.size<1000) return;
   const liveEl=document.getElementById('trans-live-text');
   try {
     whisperProcessing=true;
     if(liveEl) liveEl.textContent='Transcrevendo...';
-    const blob=new Blob([chunk],{type:recMimeType});
-    if(blob.size<1000) return;
     const fd=new FormData();
-    fd.append('file',blob,'chunk.webm');
+    fd.append('file',blob,'audio.webm');
     const res=await fetch(`${SB_URL}/functions/v1/transcribe`,{
       method:'POST',
       headers:{ 'Authorization':'Bearer '+_currentSession.access_token },
       body:fd
     });
+    if(!res.ok){ console.warn('Whisper HTTP',res.status); return; }
     const data=await res.json();
     if(data.text?.trim()){
       const ta=getTransText();
@@ -1647,11 +1647,27 @@ async function sendChunkToWhisper(chunk){
       updateWordCount();
       transcriptLines=[{id:'full',time:'',text:ta.value}];
     }
-  } catch(e){ console.warn('Whisper chunk error:',e); }
+  } catch(e){ console.warn('Whisper error:',e); }
   finally {
     whisperProcessing=false;
     if(liveEl && isRecording) liveEl.textContent='Ouvindo...';
   }
+}
+
+function startNewRecorder(){
+  if(!recStream2||!isRecording) return;
+  const chunks=[];
+  recMimeType=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
+  mediaRecorder=new MediaRecorder(recStream2,{mimeType:recMimeType});
+  mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) chunks.push(e.data); };
+  mediaRecorder.onstop=()=>{
+    if(chunks.length){
+      const blob=new Blob(chunks,{type:recMimeType});
+      audioChunks.push(blob);
+      sendBlobToWhisper(blob);
+    }
+  };
+  mediaRecorder.start();
 }
 
 async function toggleRecording(){
@@ -1659,19 +1675,18 @@ async function toggleRecording(){
   if(!isRecording){
     try {
       recStream2=await navigator.mediaDevices.getUserMedia({audio:true});
-      recMimeType=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
-      mediaRecorder=new MediaRecorder(recStream2,{mimeType:recMimeType});
       audioChunks=[];
-
-      mediaRecorder.ondataavailable=e=>{
-        if(e.data.size>0){
-          audioChunks.push(e.data);
-          sendChunkToWhisper(e.data);
-        }
-      };
-
-      mediaRecorder.start(30000); // chunk a cada 30s
       isRecording=true;
+
+      // Start first recorder
+      startNewRecorder();
+
+      // Every 30s: stop current recorder (triggers onstop → send to Whisper) and start a new one
+      whisperInterval=setInterval(()=>{
+        if(!isRecording) return;
+        if(mediaRecorder&&mediaRecorder.state==='recording') mediaRecorder.stop();
+        startNewRecorder();
+      },30000);
 
       showTransTextarea();
       getTransText().value='';
@@ -1708,31 +1723,37 @@ function startTimer(){
 
 function stopRec(){
   isRecording=false;
-  if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
+  if(whisperInterval){ clearInterval(whisperInterval); whisperInterval=null; }
+  if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop(); // triggers onstop → sends final chunk
   if(recStream2){ recStream2.getTracks().forEach(t=>t.stop()); recStream2=null; }
   mediaRecorder=null;
 }
 
 async function refineWithWhisper(){
   if(!audioChunks.length){ toast('Nenhum áudio gravado para refinar','error'); return; }
-  const mt=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
-  const blob=new Blob(audioChunks,{type:mt});
-  if(blob.size<1000){ toast('Áudio muito curto','error'); return; }
   const ta=getTransText();
   const oldText=ta.value;
-  ta.value='Refinando transcrição com Whisper...';
+  ta.value='Refinando transcrição com Whisper (0/'+audioChunks.length+')...';
   ta.disabled=true;
   try {
     if(!_currentSession){ toast('Sessão expirada','error'); return; }
-    const fd=new FormData(); fd.append('file',blob,'audio.webm');
-    const res=await fetch(`${SB_URL}/functions/v1/transcribe`,{
-      method:'POST',
-      headers:{ 'Authorization':'Bearer '+_currentSession.access_token },
-      body:fd
-    });
-    const data=await res.json();
-    if(data.text?.trim()){
-      ta.value=data.text.trim();
+    let fullText='';
+    for(let i=0;i<audioChunks.length;i++){
+      ta.value='Refinando transcrição com Whisper ('+(i+1)+'/'+audioChunks.length+')...';
+      const blob=audioChunks[i];
+      if(blob.size<1000) continue;
+      const fd=new FormData(); fd.append('file',blob,'audio.webm');
+      const res=await fetch(`${SB_URL}/functions/v1/transcribe`,{
+        method:'POST',
+        headers:{ 'Authorization':'Bearer '+_currentSession.access_token },
+        body:fd
+      });
+      if(!res.ok) continue;
+      const data=await res.json();
+      if(data.text?.trim()) fullText+=(fullText?' ':'')+data.text.trim();
+    }
+    if(fullText){
+      ta.value=fullText;
       transcriptLines=[{id:'full',time:'',text:ta.value}];
       updateWordCount();
       toast('Transcrição refinada com Whisper');
