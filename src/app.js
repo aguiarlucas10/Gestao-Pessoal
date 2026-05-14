@@ -43,6 +43,9 @@ function person(id){ return PEOPLE.find(p=>p.id===id)||PEOPLE[0]||{id:'?',name:'
 // Escape HTML-significant chars in user/AI content before innerHTML interpolation.
 // Used as defense against accidental markup injection (task titles, Whisper transcripts, GPT-4o output, person names).
 function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+// Keyboard activation for container elements with role="button" (containers that hold nested buttons,
+// so they can't be actual <button> due to HTML nesting rules). Triggers the same click handler on Enter/Space.
+function kbd(e){ if(e.key==='Enter'||e.key===' '){e.preventDefault();e.currentTarget.click()} }
 function av(p,size=18){ return `<div class="av" style="width:${size}px;height:${size}px;background:${p.bg};color:${p.color};font-size:${Math.round(size*0.42)}px">${esc(p.init)}</div>`; }
 function formatDate(s){ if(!s) return '—'; const d=new Date(s+'T12:00:00'); return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}); }
 function isOverdue(s){ return s && new Date(s+'T23:59:59')<today && s!==isoToday; }
@@ -308,13 +311,13 @@ function renderNotifs(){
   const list=document.getElementById('notif-list');
   if(!notifications.length){ list.innerHTML='<div class="notif-empty">Nenhuma notificação</div>'; return; }
   list.innerHTML=notifications.slice(0,20).map(n=>`
-    <div class="notif-item ${n.read?'':'unread'}" onclick="clickNotif('${n.id}',${n.taskId?`'${n.taskId}'`:'null'})">
-      <div class="notif-dot ${n.type}"></div>
-      <div style="flex:1">
-        <div class="notif-text">${n.text}</div>
-        <div class="notif-time">${n.time}</div>
-      </div>
-    </div>`).join('');
+    <button class="notif-item ${n.read?'':'unread'}" onclick="clickNotif('${n.id}',${n.taskId?`'${n.taskId}'`:'null'})">
+      <span class="notif-dot ${n.type}" aria-hidden="true"></span>
+      <span style="flex:1">
+        <span class="notif-text">${n.text}</span>
+        <span class="notif-time">${n.time}</span>
+      </span>
+    </button>`).join('');
 }
 
 function clickNotif(nid, taskId){
@@ -417,10 +420,10 @@ function renderBoard(){
     col.className='col';
     col.innerHTML=`
       <div class="col-head"><div class="col-head-left"><div class="col-dot" style="background:${cc.color}"></div><span class="col-name">${cc.label}</span></div><span class="col-ct">${open.length}</span></div>
-      <div class="col-add" onclick="openTaskModal()">
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <button class="col-add" onclick="openTaskModal()" aria-label="Adicionar tarefa">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         Adicionar
-      </div>
+      </button>
       <div class="col-body">
         ${open.map(cardHTML).join('')}
         ${done.length?`<div class="done-sep">✓ Concluídas (${done.length})</div>${done.map(cardDoneHTML).join('')}`:''}
@@ -444,10 +447,10 @@ function cardHTML(t){
   const over=isOverdue(t.dueDate), tod=isToday(t.dueDate);
   const fub=followupBadge(t);
   return `
-    <div class="card p-${t.priority} t-${t.tipo}" onclick="openPanel('${t.id}')">
+    <div class="card p-${t.priority} t-${t.tipo}" role="button" tabindex="0" aria-label="Tarefa: ${esc(t.title)}" onclick="openPanel('${t.id}')" onkeydown="kbd(event)">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:7px">
         <div class="card-title">${esc(t.title)}</div>
-        <div class="card-check" onclick="event.stopPropagation();toggleDone('${t.id}')"></div>
+        <button class="card-check" aria-label="${t.done?'Marcar como não feito':'Marcar como concluído'}" onclick="event.stopPropagation();toggleDone('${t.id}')"></button>
       </div>
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority==='alta'?'▲':t.priority==='media'?'●':'▼'} ${t.priority.toUpperCase()}</span>
@@ -465,9 +468,9 @@ function cardDoneHTML(t){
     <div class="card" style="opacity:.4">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
         <div class="card-title" style="text-decoration:line-through;color:var(--t3)">${esc(t.title)}</div>
-        <div class="card-check done" onclick="event.stopPropagation();toggleDone('${t.id}')">
-          <svg width="7" height="7" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>
-        </div>
+        <button class="card-check done" aria-label="Marcar como não feito" onclick="event.stopPropagation();toggleDone('${t.id}')">
+          <svg width="7" height="7" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 5l2.5 2.5L8 3" stroke="var(--acc-on)" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
       </div>
     </div>`;
 }
@@ -497,27 +500,27 @@ function openPanel(id){
   const t=tasks.find(t=>t.id===id); if(!t) return;
   document.getElementById('detail-overlay').classList.add('open');
   document.getElementById('sp-body').innerHTML=`
-    <div class="sp-field"><div class="sp-label">Título</div><div class="sp-val" contenteditable="true" onblur="updateField('${id}','title',this.textContent.trim())">${esc(t.title)}</div></div>
-    <div class="sp-field"><div class="sp-label">Prioridade</div>
-      <div class="prio-row">
-        <button class="pbtn alta ${t.priority==='alta'?'sel':''}" onclick="updateField('${id}','priority','alta')">Alta</button>
-        <button class="pbtn media ${t.priority==='media'?'sel':''}" onclick="updateField('${id}','priority','media')">Média</button>
-        <button class="pbtn baixa ${t.priority==='baixa'?'sel':''}" onclick="updateField('${id}','priority','baixa')">Baixa</button>
+    <div class="sp-field"><span class="sp-label" id="sp-title-label-${id}">Título</span><div class="sp-val" contenteditable="true" role="textbox" aria-labelledby="sp-title-label-${id}" onblur="updateField('${id}','title',this.textContent.trim())">${esc(t.title)}</div></div>
+    <div class="sp-field"><span class="sp-label" id="sp-prio-label-${id}">Prioridade</span>
+      <div class="prio-row" role="group" aria-labelledby="sp-prio-label-${id}">
+        <button class="pbtn alta ${t.priority==='alta'?'sel':''}" aria-pressed="${t.priority==='alta'}" onclick="updateField('${id}','priority','alta')">Alta</button>
+        <button class="pbtn media ${t.priority==='media'?'sel':''}" aria-pressed="${t.priority==='media'}" onclick="updateField('${id}','priority','media')">Média</button>
+        <button class="pbtn baixa ${t.priority==='baixa'?'sel':''}" aria-pressed="${t.priority==='baixa'}" onclick="updateField('${id}','priority','baixa')">Baixa</button>
       </div>
     </div>
-    <div class="sp-field"><div class="sp-label">Tipo</div>
-      <div class="tipo-row">
-        <button class="tbtn minha ${t.tipo==='minha'?'sel':''}" onclick="updateField('${id}','tipo','minha')">Eu faço</button>
-        <button class="tbtn delegada ${t.tipo==='delegada'?'sel':''}" onclick="updateField('${id}','tipo','delegada')">Delegada</button>
+    <div class="sp-field"><span class="sp-label" id="sp-tipo-label-${id}">Tipo</span>
+      <div class="tipo-row" role="group" aria-labelledby="sp-tipo-label-${id}">
+        <button class="tbtn minha ${t.tipo==='minha'?'sel':''}" aria-pressed="${t.tipo==='minha'}" onclick="updateField('${id}','tipo','minha')">Eu faço</button>
+        <button class="tbtn delegada ${t.tipo==='delegada'?'sel':''}" aria-pressed="${t.tipo==='delegada'}" onclick="updateField('${id}','tipo','delegada')">Delegada</button>
       </div>
     </div>
-    <div class="sp-field"><div class="sp-label">Responsável</div>
-      <div class="assign-wrap">${PEOPLE.map(p=>`<button class="asbtn ${t.person===p.id?'sel':''}" onclick="updateField('${id}','person','${p.id}')">${av(p,14)} ${esc(p.name)}</button>`).join('')}</div>
+    <div class="sp-field"><span class="sp-label" id="sp-resp-label-${id}">Responsável</span>
+      <div class="assign-wrap" role="group" aria-labelledby="sp-resp-label-${id}">${PEOPLE.map(p=>`<button class="asbtn ${t.person===p.id?'sel':''}" aria-pressed="${t.person===p.id}" onclick="updateField('${id}','person','${p.id}')">${av(p,14)} ${esc(p.name)}</button>`).join('')}</div>
     </div>
-    <div class="sp-field"><div class="sp-label">Data do Prazo</div><input type="date" class="date-input" value="${t.dueDate||''}" onchange="updateField('${id}','dueDate',this.value)"></div>
-    <div class="sp-field"><div class="sp-label">Origem / Reunião</div><input class="date-input" value="${esc(t.context||'')}" placeholder="Ex: 1:1 Junior" onblur="updateField('${id}','context',this.value)" style="font-family:var(--font-body)"></div>
-    ${t.recurrence?`<div class="sp-field"><div class="sp-label">Recorrência</div><select class="date-input" onchange="updateField('${id}','recurrence',this.value||null)"><option value="">Nenhuma</option><option value="daily" ${t.recurrence==='daily'?'selected':''}>Diária</option><option value="weekly" ${t.recurrence==='weekly'?'selected':''}>Semanal</option><option value="monthly" ${t.recurrence==='monthly'?'selected':''}>Mensal</option></select></div>`:''}
-    <div class="sp-field"><div class="sp-label">Notas</div><textarea class="sp-notes" placeholder="Próximos passos..." onblur="updateField('${id}','notes',this.value)">${esc(t.notes||'')}</textarea></div>
+    <label class="sp-field"><span class="sp-label">Data do Prazo</span><input type="date" class="date-input" value="${t.dueDate||''}" onchange="updateField('${id}','dueDate',this.value)"></label>
+    <label class="sp-field"><span class="sp-label">Origem / Reunião</span><input class="date-input" value="${esc(t.context||'')}" placeholder="Ex: 1:1 Junior" onblur="updateField('${id}','context',this.value)" style="font-family:var(--font-body)"></label>
+    ${t.recurrence?`<label class="sp-field"><span class="sp-label">Recorrência</span><select class="date-input" onchange="updateField('${id}','recurrence',this.value||null)"><option value="">Nenhuma</option><option value="daily" ${t.recurrence==='daily'?'selected':''}>Diária</option><option value="weekly" ${t.recurrence==='weekly'?'selected':''}>Semanal</option><option value="monthly" ${t.recurrence==='monthly'?'selected':''}>Mensal</option></select></label>`:''}
+    <label class="sp-field"><span class="sp-label">Notas</span><textarea class="sp-notes" placeholder="Próximos passos..." onblur="updateField('${id}','notes',this.value)">${esc(t.notes||'')}</textarea></label>
     <button class="sp-del" onclick="deleteTask('${id}')">Excluir tarefa</button>
   `;
 }
@@ -580,9 +583,9 @@ function renderPeople(){
         <div style="flex:1;min-width:0"><div class="person-col-name">${esc(p.name)}</div><div class="person-col-sub">${esc(p.role)}</div></div>
         <div class="col-ct">${pt.length}</div>
       </div>
-      <div class="col-add" onclick="openTaskModal(null,'${p.id}')">
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Adicionar
-      </div>
+      <button class="col-add" onclick="openTaskModal(null,'${p.id}')" aria-label="Adicionar tarefa para ${esc(p.name)}">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Adicionar
+      </button>
       <div class="person-col-body">
         ${pt.map(t=>personCardHTML(t)).join('')}
         ${done.length?`<div class="done-sep">✓ Concluídas (${done.length})</div>${done.slice(0,2).map(cardDoneHTML).join('')}`:''}
@@ -594,10 +597,10 @@ function renderPeople(){
 function personCardHTML(t){
   const over=isOverdue(t.dueDate), tod=isToday(t.dueDate);
   return `
-    <div class="card p-${t.priority} t-${t.tipo}" onclick="openPanel('${t.id}')">
+    <div class="card p-${t.priority} t-${t.tipo}" role="button" tabindex="0" aria-label="Tarefa: ${esc(t.title)}" onclick="openPanel('${t.id}')" onkeydown="kbd(event)">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:7px">
         <div class="card-title">${esc(t.title)}</div>
-        <div class="card-check" onclick="event.stopPropagation();toggleDone('${t.id}')"></div>
+        <button class="card-check" aria-label="${t.done?'Marcar como não feito':'Marcar como concluído'}" onclick="event.stopPropagation();toggleDone('${t.id}')"></button>
       </div>
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority.toUpperCase()}</span>
@@ -628,8 +631,8 @@ function renderCal(){
     for(let d=1;d<=dim;d++){
       const cd=isoDate(new Date(yr,mo,d)), isT=cd===isoToday;
       const dt=tasks.filter(t=>t.dueDate===cd&&!t.done).sort((a,b)=>a.priority==='alta'?-1:1);
-      html+=`<div class="cal-cell ${isT?'today':''}" onclick="openCalDayPopup('${cd}',${d})"><span class="cal-day-num">${d}</span>`;
-      dt.slice(0,3).forEach(t=>{ html+=`<div class="cal-task-pill ${t.priority}" onclick="event.stopPropagation();openPanel('${t.id}')">${esc(t.title)}</div>`; });
+      html+=`<div class="cal-cell ${isT?'today':''}" role="button" tabindex="0" aria-label="Tarefas de ${d}" onclick="openCalDayPopup('${cd}',${d})" onkeydown="kbd(event)"><span class="cal-day-num">${d}</span>`;
+      dt.slice(0,3).forEach(t=>{ html+=`<button class="cal-task-pill ${t.priority}" onclick="event.stopPropagation();openPanel('${t.id}')">${esc(t.title)}</button>`; });
       if(dt.length>3) html+=`<div class="cal-more">+${dt.length-3} mais</div>`;
       html+=`</div>`;
     }
@@ -649,7 +652,7 @@ function renderCal(){
       const wd=addDays(ws,d), cd=isoDate(wd);
       const dt=tasks.filter(t=>t.dueDate===cd&&!t.done);
       html+=`<div style="border-right:1px solid var(--b1);border-bottom:1px solid var(--b2);padding:4px;background:var(--s1);${isoDate(wd)===isoToday?'background:var(--acc3)':''}">`;
-      dt.forEach(t=>{ html+=`<div class="cal-task-pill ${t.priority}" onclick="openPanel('${t.id}')" style="margin-bottom:3px">${esc(t.title)}</div>`; });
+      dt.forEach(t=>{ html+=`<button class="cal-task-pill ${t.priority}" onclick="openPanel('${t.id}')" style="margin-bottom:3px;width:100%">${esc(t.title)}</button>`; });
       if(!dt.length) html+=`<div style="font-size:10px;color:var(--t4);padding:2px">—</div>`;
       html+=`</div>`;
     }
@@ -672,10 +675,10 @@ function openCalDayPopup(dateStr, dayNum){
 
   let html=dt.map(t=>{
     const p=person(t.person);
-    return `<div class="card p-${t.priority} t-${t.tipo}" onclick="event.stopPropagation();document.getElementById('cal-day-popup').remove();openPanel('${t.id}')" style="margin-bottom:6px">
+    return `<div class="card p-${t.priority} t-${t.tipo}" role="button" tabindex="0" aria-label="Tarefa: ${esc(t.title)}" onclick="event.stopPropagation();document.getElementById('cal-day-popup').remove();openPanel('${t.id}')" onkeydown="kbd(event)" style="margin-bottom:6px">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:7px">
         <div class="card-title">${esc(t.title)}</div>
-        <div class="card-check" onclick="event.stopPropagation();toggleDone('${t.id}');document.getElementById('cal-day-popup')?.remove()"></div>
+        <button class="card-check" aria-label="Marcar como concluído" onclick="event.stopPropagation();toggleDone('${t.id}');document.getElementById('cal-day-popup')?.remove()"></button>
       </div>
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority==='alta'?'▲':t.priority==='media'?'●':'▼'} ${t.priority.toUpperCase()}</span>
@@ -719,10 +722,10 @@ function openTaskModal(_, personHint, dateHint){
   document.getElementById('m-title').value='';
   document.getElementById('m-context').value='';
   mPrio='media'; mTipo='delegada';
-  document.querySelectorAll('#task-modal .pbtn').forEach(b=>b.classList.remove('sel'));
-  document.querySelector('#task-modal .pbtn.media').classList.add('sel');
-  document.querySelectorAll('#task-modal .tbtn').forEach(b=>b.classList.remove('sel'));
-  document.querySelector('#task-modal .tbtn.delegada').classList.add('sel');
+  document.querySelectorAll('#task-modal .pbtn').forEach(b=>{b.classList.remove('sel');b.setAttribute('aria-pressed','false')});
+  const mediaBtn=document.querySelector('#task-modal .pbtn.media'); mediaBtn.classList.add('sel'); mediaBtn.setAttribute('aria-pressed','true');
+  document.querySelectorAll('#task-modal .tbtn').forEach(b=>{b.classList.remove('sel');b.setAttribute('aria-pressed','false')});
+  const delBtn=document.querySelector('#task-modal .tbtn.delegada'); delBtn.classList.add('sel'); delBtn.setAttribute('aria-pressed','true');
   // Update person select from PEOPLE
   const sel=document.getElementById('m-person');
   sel.innerHTML=PEOPLE.map(p=>`<option value="${p.id}">${esc(p.name)}${p.id==='lucas'?' (você)':''}</option>`).join('');
@@ -736,8 +739,8 @@ function openTaskModal(_, personHint, dateHint){
 function openModal(id){ document.getElementById(id).classList.add('open'); }
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
 function closeModalOut(e,id){ if(e.target.id===id) closeModal(id); }
-function mSelPrio(p,el){ mPrio=p; document.querySelectorAll('#task-modal .pbtn').forEach(b=>b.classList.remove('sel')); el.classList.add('sel'); }
-function mSelTipo(t,el){ mTipo=t; document.querySelectorAll('#task-modal .tbtn').forEach(b=>b.classList.remove('sel')); el.classList.add('sel'); }
+function mSelPrio(p,el){ mPrio=p; document.querySelectorAll('#task-modal .pbtn').forEach(b=>{b.classList.remove('sel');b.setAttribute('aria-pressed','false')}); el.classList.add('sel'); el.setAttribute('aria-pressed','true'); }
+function mSelTipo(t,el){ mTipo=t; document.querySelectorAll('#task-modal .tbtn').forEach(b=>{b.classList.remove('sel');b.setAttribute('aria-pressed','false')}); el.classList.add('sel'); el.setAttribute('aria-pressed','true'); }
 
 async function addTask(){
   const title=document.getElementById('m-title').value.trim();
@@ -967,13 +970,13 @@ function renderAIResults(ata, demands){
     const p=person(d.responsavel||'lucas');
     html+=`<div class="demand-item ${d.prioridade}" id="dem-${i}">
       <div style="flex:1"><div class="demand-text">${esc(d.titulo)}</div><div class="demand-meta"><span class="tag ${d.prioridade}">${d.prioridade.toUpperCase()}</span><span class="tag ${d.tipo}">${d.tipo==='minha'?'Eu faço':'Delegada'}</span>${av(p,14)}<span style="font-size:11px;color:var(--t2)">${esc(p.name)}</span></div></div>
-      <div class="demand-check" id="dchk-${i}" onclick="toggleDemand(${i})"></div>
+      <button class="demand-check" id="dchk-${i}" aria-label="Marcar demanda" onclick="toggleDemand(${i})"></button>
     </div>`;
   });
   document.getElementById('trans-ai-area').innerHTML=html;
 }
 
-function toggleDemand(i){ const c=document.getElementById('dchk-'+i); c.classList.toggle('checked'); const on=c.classList.contains('checked'); c.innerHTML=on?`<svg width="7" height="7" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>`:''; aiDemands[i]._skip=!on; }
+function toggleDemand(i){ const c=document.getElementById('dchk-'+i); c.classList.toggle('checked'); const on=c.classList.contains('checked'); c.innerHTML=on?`<svg width="7" height="7" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="var(--acc-on)" stroke-width="1.5" stroke-linecap="round"/></svg>`:''; aiDemands[i]._skip=!on; }
 
 async function addDemandsToBoard(){
   if(!aiDemands.length){ toast('Nenhuma demanda gerada','error'); return; }
@@ -1123,10 +1126,10 @@ function openPersonModal(editId){
     <div class="oo-modal-overlay" id="oo-person-modal" onclick="if(event.target===this)this.remove()">
       <div class="oo-modal" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="oo-person-modal-title">
         <h3 id="oo-person-modal-title">${esc(t)}</h3>
-        <div><label>Nome</label><input id="opm-name" value="${esc(nm)}" placeholder="Nome da pessoa"></div>
-        <div><label>Cargo / Papel</label><input id="opm-role" value="${esc(rl)}" placeholder="Ex: Diretor Comercial"></div>
-        <div><label>Cor</label><div class="oo-color-grid" id="opm-colors">
-          ${OO_COLORS.map(c=>`<div class="oo-color-opt ${c.hex===selColor?'sel':''}" style="background:${c.hex}" data-hex="${c.hex}" data-bg="${c.bg}" onclick="event.stopPropagation();document.querySelectorAll('.oo-color-opt').forEach(e=>e.classList.remove('sel'));this.classList.add('sel')"></div>`).join('')}
+        <div><label for="opm-name">Nome</label><input id="opm-name" value="${esc(nm)}" placeholder="Nome da pessoa"></div>
+        <div><label for="opm-role">Cargo / Papel</label><input id="opm-role" value="${esc(rl)}" placeholder="Ex: Diretor Comercial"></div>
+        <div><span id="opm-color-label">Cor</span><div class="oo-color-grid" id="opm-colors" role="group" aria-labelledby="opm-color-label">
+          ${OO_COLORS.map(c=>`<button class="oo-color-opt ${c.hex===selColor?'sel':''}" aria-label="Cor ${c.hex}" style="background:${c.hex}" data-hex="${c.hex}" data-bg="${c.bg}" onclick="event.stopPropagation();document.querySelectorAll('.oo-color-opt').forEach(e=>e.classList.remove('sel'));this.classList.add('sel')"></button>`).join('')}
         </div></div>
         <div class="oo-modal-btns">
           <button class="btn-sm" onclick="document.getElementById('oo-person-modal').remove()">Cancelar</button>
@@ -1176,10 +1179,11 @@ function renderOneOne(){
     const pid=pp.id, data=oo11[pid];
     const pend=data?data.actions.filter(a=>!a.done).length:0;
     return `<div class="oo-person ${ooSelected===pid?'active':''} ${pp.hidden?'hidden-person':''}"
+      role="button" tabindex="0" aria-label="Abrir 1:1 com ${esc(pp.name)}"
       draggable="true" data-oo-idx="${idx}"
       ondragstart="ooDragStart(event,${idx})" ondragover="ooDragOver(event,${idx})" ondragleave="ooDragLeave(event)" ondrop="ooDrop(event,${idx})" ondragend="ooDragEnd(event)"
-      onclick="selectOO('${pid}')">
-      ${av(pp,32)}<div style="flex:1;min-width:0"><div class="oo-person-name">${pp.name}</div><div class="oo-person-last">${pp.role}</div></div>
+      onclick="selectOO('${pid}')" onkeydown="kbd(event)">
+      ${av(pp,32)}<div style="flex:1;min-width:0"><div class="oo-person-name">${esc(pp.name)}</div><div class="oo-person-last">${esc(pp.role)}</div></div>
       <div class="oo-item-actions" onclick="event.stopPropagation()">
         <button class="oo-item-btn" onclick="event.stopPropagation();openPersonModal('${pid}')" aria-label="Editar" title="Editar">✎</button>
         <button class="oo-item-btn" onclick="event.stopPropagation();toggleHidePerson('${pid}')" aria-label="${pp.hidden?'Mostrar pessoa':'Ocultar pessoa'}" title="${pp.hidden?'Mostrar':'Ocultar'}">${pp.hidden?'👁':'🚫'}</button>
@@ -1247,7 +1251,7 @@ function selectOO(pid){
               <button class="oo-item-btn" onclick="openPanel('${t.id}')" aria-label="Editar" title="Editar">✎</button>
               <button class="oo-item-btn del" onclick="if(confirm('Excluir demanda?')){deleteTask('${t.id}');selectOO('${pid}')}" aria-label="Excluir" title="Excluir">✕</button>
             </div>
-            <div class="oo-action-chk ${t.done?'done':''}" onclick="toggleDone('${t.id}');selectOO('${pid}')"></div>
+            <button class="oo-action-chk ${t.done?'done':''}" aria-label="${t.done?'Marcar como não feito':'Marcar como concluído'}" onclick="toggleDone('${t.id}');selectOO('${pid}')"></button>
           </div>`).join('') || '<div style="font-size:12px;color:var(--t3);padding:6px 0">Nenhuma demanda em aberto.</div>'}
       </div>
       <div class="oo-section" id="oo-meetings-${pid}">
@@ -1271,7 +1275,7 @@ async function loadOOMeetings(pid){
     if(relevant.length){
       relevant.forEach(m=>{
         const preview=(m.ata||'').substring(0,120).replace(/\n/g,' ');
-        html+=`<div class="oo-topic" style="cursor:pointer" onclick="this.querySelector('.oo-ata-full').style.display=this.querySelector('.oo-ata-full').style.display==='none'?'block':'none'">
+        html+=`<button class="oo-topic" style="cursor:pointer;width:100%;text-align:left" aria-expanded="false" onclick="const f=this.querySelector('.oo-ata-full');const open=f.style.display==='block';f.style.display=open?'none':'block';this.setAttribute('aria-expanded',!open)">
           <div style="flex:1">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
               <span class="tag dt" style="font-size:10px">${formatDate(m.meeting_date)}</span>
@@ -1280,7 +1284,7 @@ async function loadOOMeetings(pid){
             <div style="font-size:11px;color:var(--t3)">${esc(preview)}${preview.length>=120?'...':''}</div>
             <div class="oo-ata-full" style="display:none;margin-top:8px;font-size:12px;color:var(--t2);line-height:1.7;white-space:pre-line;border-top:1px solid var(--b1);padding-top:8px">${esc(m.ata||'Sem ata disponível.')}</div>
           </div>
-        </div>`;
+        </button>`;
       });
     } else {
       html+=`<div style="font-size:12px;color:var(--t4);padding:4px 0">Nenhuma reunião com ${esc(p.name)} encontrada.</div>`;
@@ -1298,9 +1302,9 @@ function renderOOActions(pid){
         <button class="oo-item-btn" onclick="editOOAction('${pid}',${i})" aria-label="Editar" title="Editar">✎</button>
         <button class="oo-item-btn del" onclick="delOOAction('${pid}',${i})" aria-label="Excluir" title="Excluir">✕</button>
       </div>
-      <div class="oo-action-chk ${a.done?'done':''}" onclick="toggleOOAct('${pid}',${i})">
-        ${a.done?`<svg width="7" height="7" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>`:''}
-      </div>
+      <button class="oo-action-chk ${a.done?'done':''}" aria-label="${a.done?'Marcar como não feito':'Marcar como concluído'}" onclick="toggleOOAct('${pid}',${i})">
+        ${a.done?`<svg width="7" height="7" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 5l2.5 2.5L8 3" stroke="var(--acc-on)" stroke-width="1.5" stroke-linecap="round"/></svg>`:''}
+      </button>
     </div>`).join('');
 }
 
@@ -1348,10 +1352,10 @@ function renderMeetingsList(){
     const mon=d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','');
     const pArr=Array.isArray(m.participants)?m.participants:typeof m.participants==='string'?m.participants.split(',').map(s=>s.trim()).filter(Boolean):[];
     const parts=pArr.join(', ')||'Sem participantes';
-    return `<div class="reun-card ${reunSelected===m.id?'active':''}" onclick="selectMeeting('${m.id}')">
+    return `<button class="reun-card ${reunSelected===m.id?'active':''}" aria-pressed="${reunSelected===m.id}" onclick="selectMeeting('${m.id}')">
       <div class="reun-card-date"><div class="reun-card-day">${day}</div><div class="reun-card-mon">${mon}</div></div>
       <div class="reun-card-info"><div class="reun-card-title">${esc(m.title||'Reunião')}</div><div class="reun-card-sub">${esc(parts)}</div></div>
-    </div>`;
+    </button>`;
   }).join('');
 }
 
@@ -1392,14 +1396,14 @@ async function selectMeeting(id){
   const tasksHtml=relatedTasks.length? relatedTasks.map(t=>`
     <div class="oo-action">
       <div style="flex:1">
-        <div class="oo-action-text">${t.done?'<s style="color:var(--t3)">'+t.title+'</s>':t.title}</div>
+        <div class="oo-action-text">${t.done?`<s style="color:var(--t3)">${esc(t.title)}</s>`:esc(t.title)}</div>
         <div class="oo-action-meta">
           <span class="tag ${t.priority}">${t.priority.toUpperCase()}</span>
-          <span style="font-size:10px;color:var(--t3)">${t.person||''} · ${formatDate(t.dueDate)}</span>
+          <span style="font-size:10px;color:var(--t3)">${esc(t.person||'')} · ${formatDate(t.dueDate)}</span>
         </div>
       </div>
-      <div class="oo-action-chk ${t.done?'done':''}">
-        ${t.done?'<svg width="7" height="7" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>':''}
+      <div class="oo-action-chk ${t.done?'done':''}" aria-hidden="true">
+        ${t.done?'<svg width="7" height="7" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="var(--acc-on)" stroke-width="1.5" stroke-linecap="round"/></svg>':''}
       </div>
     </div>`).join('')
     :'<div style="font-size:12px;color:var(--t4)">Nenhuma tarefa vinculada.</div>';
@@ -1455,10 +1459,10 @@ function openNewMeetingModal(){
     <div class="oo-modal-overlay" id="new-meeting-modal" onclick="if(event.target===this)this.remove()">
       <div class="oo-modal" onclick="event.stopPropagation()" style="width:420px" role="dialog" aria-modal="true" aria-labelledby="new-meeting-modal-title">
         <h3 id="new-meeting-modal-title">Nova Reunião</h3>
-        <div><label>Título</label><input id="nm-title" placeholder="Ex: Alinhamento semanal"></div>
-        <div><label>Data</label><input type="date" id="nm-date" value="${isoToday}"></div>
-        <div><label>Participantes (separados por vírgula)</label><input id="nm-parts" placeholder="Ex: Ana, João, Pedro"></div>
-        <div><label>Anotações iniciais</label><textarea id="nm-notes" class="oo-note-area" style="min-height:60px" placeholder="Pauta, observações..."></textarea></div>
+        <div><label for="nm-title">Título</label><input id="nm-title" placeholder="Ex: Alinhamento semanal"></div>
+        <div><label for="nm-date">Data</label><input type="date" id="nm-date" value="${isoToday}"></div>
+        <div><label for="nm-parts">Participantes (separados por vírgula)</label><input id="nm-parts" placeholder="Ex: Ana, João, Pedro"></div>
+        <div><label for="nm-notes">Anotações iniciais</label><textarea id="nm-notes" class="oo-note-area" style="min-height:60px" placeholder="Pauta, observações..."></textarea></div>
         <div class="oo-modal-btns">
           <button class="btn-sm" onclick="document.getElementById('new-meeting-modal').remove()">Cancelar</button>
           <button class="btn-sm primary" onclick="saveNewMeeting()">Criar</button>

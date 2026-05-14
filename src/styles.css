@@ -68,6 +68,11 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--t1)}
 /* ── A11Y FOUNDATIONS ── */
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:4px}
 *:focus:not(:focus-visible){outline:none}
+/* Button reset so existing class styles take over when <div onclick> → <button> */
+button{font:inherit;color:inherit;background:transparent;border:none;padding:0;margin:0;cursor:pointer;text-align:inherit;line-height:inherit}
+/* Buttons that replaced full-width divs need explicit width to keep layout */
+.nav-item,.col-add,.notif-item,.cal-task-pill,.reun-card,.oo-topic{width:100%}
+.cal-task-pill{display:block}
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
 }
