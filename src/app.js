@@ -39,7 +39,7 @@ let oo11={};
 // ══════════════════════════════════════════════
 function isoDate(d){ return d.toISOString().split('T')[0]; }
 function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
-function person(id){ return PEOPLE.find(p=>p.id===id)||PEOPLE[0]||{id:'?',name:'?',init:'?',role:'',color:'#666',bg:'rgba(100,100,100,.2)',hidden:false}; }
+function person(id){ return PEOPLE.find(p=>p.id===id)||PEOPLE[0]||{id:'?',name:'?',init:'?',role:'',color:'var(--t3)',bg:'var(--s2)',hidden:false}; }
 function av(p,size=18){ return `<div class="av" style="width:${size}px;height:${size}px;background:${p.bg};color:${p.color};font-size:${Math.round(size*0.42)}px">${p.init}</div>`; }
 function formatDate(s){ if(!s) return '—'; const d=new Date(s+'T12:00:00'); return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}); }
 function isOverdue(s){ return s && new Date(s+'T23:59:59')<today && s!==isoToday; }
@@ -357,12 +357,13 @@ function updateBadge(){
 // ══════════════════════════════════════════════
 // BOARD
 // ══════════════════════════════════════════════
+// Column dot colors — semantic, using Officio tokens
 const COL_CONFIG=[
-  { id:'atrasadas', label:'Atrasadas', color:'#ff4d6d' },
-  { id:'hoje',      label:'Hoje',      color:'#ffd166' },
-  { id:'proximos',  label:'Próximos 2 dias', color:'#ff8c42' },
-  { id:'semana',    label:'Esta semana', color:'#4f7cff' },
-  { id:'depois',    label:'Depois',    color:'#4a5278' },
+  { id:'atrasadas', label:'Atrasadas',         color:'var(--rust)'   },
+  { id:'hoje',      label:'Hoje',              color:'var(--saff)'   },
+  { id:'proximos',  label:'Próximos 2 dias',   color:'var(--bronze)' },
+  { id:'semana',    label:'Esta semana',       color:'var(--acc)'    },
+  { id:'depois',    label:'Depois',            color:'var(--t3)'     },
 ];
 
 function getCol(dueDate){
@@ -494,7 +495,7 @@ function openPanel(id){
       <div class="assign-wrap">${PEOPLE.map(p=>`<button class="asbtn ${t.person===p.id?'sel':''}" onclick="updateField('${id}','person','${p.id}')">${av(p,14)} ${p.name}</button>`).join('')}</div>
     </div>
     <div class="sp-field"><div class="sp-label">Data do Prazo</div><input type="date" class="date-input" value="${t.dueDate||''}" onchange="updateField('${id}','dueDate',this.value)"></div>
-    <div class="sp-field"><div class="sp-label">Origem / Reunião</div><input class="date-input" value="${t.context||''}" placeholder="Ex: 1:1 Junior" onblur="updateField('${id}','context',this.value)" style="font-family:'Geist',sans-serif"></div>
+    <div class="sp-field"><div class="sp-label">Origem / Reunião</div><input class="date-input" value="${t.context||''}" placeholder="Ex: 1:1 Junior" onblur="updateField('${id}','context',this.value)" style="font-family:var(--font-body)"></div>
     ${t.recurrence?`<div class="sp-field"><div class="sp-label">Recorrência</div><select class="date-input" onchange="updateField('${id}','recurrence',this.value||null)"><option value="">Nenhuma</option><option value="daily" ${t.recurrence==='daily'?'selected':''}>Diária</option><option value="weekly" ${t.recurrence==='weekly'?'selected':''}>Semanal</option><option value="monthly" ${t.recurrence==='monthly'?'selected':''}>Mensal</option></select></div>`:''}
     <div class="sp-field"><div class="sp-label">Notas</div><textarea class="sp-notes" placeholder="Próximos passos..." onblur="updateField('${id}','notes',this.value)">${t.notes||''}</textarea></div>
     <button class="sp-del" onclick="deleteTask('${id}')">Excluir tarefa</button>
@@ -623,7 +624,7 @@ function renderCal(){
     for(let d=0;d<7;d++){ const wd=addDays(ws,d); html+=`<div class="cal-dow ${isoDate(wd)===isoToday?'':''}">` +DAYS[d]+' '+wd.getDate()+'</div>'; }
     html+=`</div><div class="cal-grid" style="grid-template-columns:50px repeat(7,1fr)">`;
     // All-day tasks row
-    html+=`<div style="font-family:'Geist Mono',monospace;font-size:9px;color:var(--t4);padding:6px;text-align:right;border-right:1px solid var(--b1);border-bottom:1px solid var(--b2);background:var(--s1)">Tarefas</div>`;
+    html+=`<div style="font-family:var(--font-mono);font-size:9px;color:var(--t4);padding:6px;text-align:right;border-right:1px solid var(--b1);border-bottom:1px solid var(--b2);background:var(--s1)">Tarefas</div>`;
     for(let d=0;d<7;d++){
       const wd=addDays(ws,d), cd=isoDate(wd);
       const dt=tasks.filter(t=>t.dueDate===cd&&!t.done);
@@ -634,7 +635,7 @@ function renderCal(){
     }
     // Hour rows
     for(let h=8;h<=19;h++){
-      html+=`<div style="font-family:'Geist Mono',monospace;font-size:9px;color:var(--t4);padding:4px 6px;text-align:right;border-right:1px solid var(--b1);border-bottom:1px solid var(--b1)">${h}h</div>`;
+      html+=`<div style="font-family:var(--font-mono);font-size:9px;color:var(--t4);padding:4px 6px;text-align:right;border-right:1px solid var(--b1);border-bottom:1px solid var(--b1)">${h}h</div>`;
       for(let d=0;d<7;d++){
         const wd=addDays(ws,d);
         html+=`<div style="border-right:1px solid var(--b1);border-bottom:1px solid var(--b1);min-height:48px;padding:3px;${isoDate(wd)===isoToday?'background:var(--acc3)':''}"></div>`;
@@ -1077,7 +1078,17 @@ async function loadOOState(){
 }
 
 // ── People management ──
-const OO_COLORS=[{hex:'#4f7cff',bg:'rgba(79,124,255,.2)'},{hex:'#2dce89',bg:'rgba(45,206,137,.2)'},{hex:'#ff8c42',bg:'rgba(255,140,66,.2)'},{hex:'#a78bfa',bg:'rgba(167,139,250,.2)'},{hex:'#ff4d6d',bg:'rgba(255,77,109,.2)'},{hex:'#ffd166',bg:'rgba(255,209,102,.2)'},{hex:'#36d6c3',bg:'rgba(54,214,195,.2)'},{hex:'#f472b6',bg:'rgba(244,114,182,.2)'}];
+// Person palette — Officio identity, warm-light harmonized (see DESIGN.md)
+const OO_COLORS=[
+  {hex:'#4D5B96', bg:'oklch(94% 0.025 270)'}, // indigo
+  {hex:'#5E7F3F', bg:'oklch(94% 0.025 130)'}, // moss
+  {hex:'#B66A3D', bg:'oklch(95% 0.035 45)'},  // terra
+  {hex:'#6E4761', bg:'oklch(94% 0.025 340)'}, // plum
+  {hex:'#A93B27', bg:'oklch(94% 0.030 30)'},  // rust
+  {hex:'#B89028', bg:'oklch(95% 0.035 90)'},  // mustard
+  {hex:'#3B6B74', bg:'oklch(94% 0.020 195)'}, // teal
+  {hex:'#A06064', bg:'oklch(94% 0.025 0)'},   // rose-dust
+];
 
 function toggleOOHidden(){ ooShowHidden=!ooShowHidden; renderOneOne(); }
 
@@ -1340,7 +1351,7 @@ async function selectMeeting(id){
 
   const mParts=Array.isArray(m.participants)?m.participants:typeof m.participants==='string'?m.participants.split(',').map(s=>s.trim()).filter(Boolean):[];
   const partsHtml=mParts.map((p,i)=>{
-    const colors=['#4f7cff','#2dce89','#ff8c42','#a78bfa','#ff4d6d','#ffd166','#36d6c3','#f472b6'];
+    const colors=OO_COLORS.map(c=>c.hex);
     const c=colors[i%colors.length];
     const init=p.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
     return `<div class="reun-participant"><div class="reun-participant-av" style="background:${c}">${init}</div>${p}</div>`;

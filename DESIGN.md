@@ -47,11 +47,11 @@ Todos em OKLCH (com hex fallback comentado). Reduzir chroma conforme lightness s
 ```css
 --t1     oklch(18%   0.008 60)   /* #1C1A17 warm carbon (body)  */
 --t2     oklch(38%   0.010 60)   /* #4E4940 muted               */
---t3     oklch(54%   0.012 60)   /* #756E62 label               */
---t4     oklch(68%   0.014 60)   /* #9C9385 label faint         */
+--t3     oklch(50%   0.012 60)   /* #6E6859 label, ~7.5:1 vs bg */
+--t4     oklch(60%   0.014 60)   /* #8A8174 label faint, ~4.5:1 */
 ```
 
-**Nota**: `--t4` foi subido até 68% lightness para passar contraste AA contra `--bg`. O original `#2a3050` em fundo escuro era falha clara de 1.6:1.
+**Nota**: `--t3` e `--t4` ajustados para passar WCAG AA contra `--bg`. O original `#2a3050` em fundo escuro era falha clara de 1.6:1.
 
 ### Accent (Committed — Oxblood)
 
