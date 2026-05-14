@@ -40,7 +40,10 @@ let oo11={};
 function isoDate(d){ return d.toISOString().split('T')[0]; }
 function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
 function person(id){ return PEOPLE.find(p=>p.id===id)||PEOPLE[0]||{id:'?',name:'?',init:'?',role:'',color:'var(--t3)',bg:'var(--s2)',hidden:false}; }
-function av(p,size=18){ return `<div class="av" style="width:${size}px;height:${size}px;background:${p.bg};color:${p.color};font-size:${Math.round(size*0.42)}px">${p.init}</div>`; }
+// Escape HTML-significant chars in user/AI content before innerHTML interpolation.
+// Used as defense against accidental markup injection (task titles, Whisper transcripts, GPT-4o output, person names).
+function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function av(p,size=18){ return `<div class="av" style="width:${size}px;height:${size}px;background:${p.bg};color:${p.color};font-size:${Math.round(size*0.42)}px">${esc(p.init)}</div>`; }
 function formatDate(s){ if(!s) return '—'; const d=new Date(s+'T12:00:00'); return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}); }
 function isOverdue(s){ return s && new Date(s+'T23:59:59')<today && s!==isoToday; }
 function isToday(s){ return s===isoToday; }
@@ -49,12 +52,29 @@ function toast(msg,type='success'){
   const w=document.getElementById('toast-wrap');
   const t=document.createElement('div');
   t.className=`toast ${type}`;
+  t.setAttribute('role','status');
   const icon=type==='success'?'✓':type==='error'?'⚠':'ℹ';
-  t.innerHTML=`<span>${icon}</span> ${msg}`;
+  // msg may be a string (escape) or pre-built HTML from internal callers — internal callers
+  // already control the markup. External/AI text always passes through esc() at the call site.
+  t.innerHTML=`<span aria-hidden="true">${icon}</span> ${msg}`;
   w.appendChild(t);
   setTimeout(()=>t.style.opacity='0',2700);
   setTimeout(()=>t.remove(),3000);
 }
+
+// Close topmost open modal on Escape (a11y: dialogs must be dismissable via keyboard)
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  // Dynamic modals first (most recently opened)
+  const dyn = document.getElementById('cal-day-popup')
+           || document.getElementById('oo-person-modal')
+           || document.getElementById('new-meeting-modal');
+  if (dyn) { dyn.remove(); return; }
+  if (document.getElementById('detail-overlay')?.classList.contains('open')) { closePanel(); return; }
+  if (document.getElementById('task-modal')?.classList.contains('open')) { closeModal('task-modal'); return; }
+  if (document.getElementById('briefing-overlay')?.classList.contains('open')) { closeBriefing(); return; }
+  if (document.getElementById('notif-panel')?.classList.contains('open')) { toggleNotifPanel(); return; }
+});
 
 // ══════════════════════════════════════════════
 // AUTH
@@ -174,11 +194,11 @@ function checkNotifications(){
   tasks.filter(t=>!t.done).forEach(t=>{
     // Due date notifications
     if(isOverdue(t.dueDate)){
-      newNotifs.push({ id:'ov-'+t.id, type:'alta', text:`<strong>${t.title}</strong> está atrasada — prazo era ${formatDate(t.dueDate)}`, time:'Agora', taskId:t.id, read:false });
+      newNotifs.push({ id:'ov-'+t.id, type:'alta', text:`<strong>${esc(t.title)}</strong> está atrasada — prazo era ${formatDate(t.dueDate)}`, time:'Agora', taskId:t.id, read:false });
     } else if(isToday(t.dueDate)){
-      newNotifs.push({ id:'td-'+t.id, type:'media', text:`<strong>${t.title}</strong> vence <strong>hoje</strong>`, time:'Hoje', taskId:t.id, read:false });
+      newNotifs.push({ id:'td-'+t.id, type:'media', text:`<strong>${esc(t.title)}</strong> vence <strong>hoje</strong>`, time:'Hoje', taskId:t.id, read:false });
     } else if(t.dueDate===isoDate(addDays(today,1))){
-      newNotifs.push({ id:'tm-'+t.id, type:'info', text:`<strong>${t.title}</strong> vence <strong>amanhã</strong>`, time:'Amanhã', taskId:t.id, read:false });
+      newNotifs.push({ id:'tm-'+t.id, type:'info', text:`<strong>${esc(t.title)}</strong> vence <strong>amanhã</strong>`, time:'Amanhã', taskId:t.id, read:false });
     }
     // Follow-up cadence (2→5→7 days) for delegated tasks
     if(t.tipo==='delegada'){
@@ -186,11 +206,11 @@ function checkNotifications(){
       const days=Math.floor((today-new Date(ref+'T12:00:00'))/(1000*60*60*24));
       const p=person(t.person);
       if(days>=7){
-        newNotifs.push({ id:'fu7-'+t.id, type:'alta', text:`⚠️ <strong>${t.title}</strong> — 7+ dias sem retorno de ${p.name}. Cobrar ou reavaliar.`, time:'Dia '+days, taskId:t.id, read:false });
+        newNotifs.push({ id:'fu7-'+t.id, type:'alta', text:`⚠️ <strong>${esc(t.title)}</strong> — 7+ dias sem retorno de ${esc(p.name)}. Cobrar ou reavaliar.`, time:'Dia '+days, taskId:t.id, read:false });
       } else if(days>=5){
-        newNotifs.push({ id:'fu5-'+t.id, type:'media', text:`📋 <strong>${t.title}</strong> — 5 dias delegada a ${p.name}. Follow-up direto recomendado.`, time:'Dia '+days, taskId:t.id, read:false });
+        newNotifs.push({ id:'fu5-'+t.id, type:'media', text:`📋 <strong>${esc(t.title)}</strong> — 5 dias delegada a ${esc(p.name)}. Follow-up direto recomendado.`, time:'Dia '+days, taskId:t.id, read:false });
       } else if(days>=2){
-        newNotifs.push({ id:'fu2-'+t.id, type:'info', text:`💬 <strong>${t.title}</strong> — 2+ dias com ${p.name}. Verificar andamento.`, time:'Dia '+days, taskId:t.id, read:false });
+        newNotifs.push({ id:'fu2-'+t.id, type:'info', text:`💬 <strong>${esc(t.title)}</strong> — 2+ dias com ${esc(p.name)}. Verificar andamento.`, time:'Dia '+days, taskId:t.id, read:false });
       }
     }
   });
@@ -236,7 +256,7 @@ function showBriefing(){
   html+=`<div class="briefing-section"><div class="briefing-section-title">🔴 Atrasadas <span class="briefing-count">${overdue.length}</span></div>`;
   if(overdue.length) overdue.slice(0,5).forEach(t=>{
     const p=person(t.person);
-    html+=`<div class="briefing-item overdue"><div style="flex:1"><div>${t.title}</div><div class="briefing-item-meta">${p.name} · ${formatDate(t.dueDate)} · <span class="tag ${t.priority}" style="font-size:9px">${t.priority.toUpperCase()}</span></div></div></div>`;
+    html+=`<div class="briefing-item overdue"><div style="flex:1"><div>${esc(t.title)}</div><div class="briefing-item-meta">${esc(p.name)} · ${formatDate(t.dueDate)} · <span class="tag ${t.priority}" style="font-size:9px">${t.priority.toUpperCase()}</span></div></div></div>`;
   });
   else html+=`<div class="briefing-empty">Nenhuma tarefa atrasada</div>`;
   html+=`</div>`;
@@ -245,7 +265,7 @@ function showBriefing(){
   html+=`<div class="briefing-section"><div class="briefing-section-title">🟠 Hoje <span class="briefing-count">${todayTasks.length}</span></div>`;
   if(todayTasks.length) todayTasks.forEach(t=>{
     const p=person(t.person);
-    html+=`<div class="briefing-item today"><div style="flex:1"><div>${t.title}</div><div class="briefing-item-meta">${p.name} · <span class="tag ${t.priority}" style="font-size:9px">${t.priority.toUpperCase()}</span> · ${t.tipo==='minha'?'Eu faço':'Delegada'}</div></div></div>`;
+    html+=`<div class="briefing-item today"><div style="flex:1"><div>${esc(t.title)}</div><div class="briefing-item-meta">${esc(p.name)} · <span class="tag ${t.priority}" style="font-size:9px">${t.priority.toUpperCase()}</span> · ${t.tipo==='minha'?'Eu faço':'Delegada'}</div></div></div>`;
   });
   else html+=`<div class="briefing-empty">Nenhuma tarefa para hoje</div>`;
   html+=`</div>`;
@@ -254,7 +274,7 @@ function showBriefing(){
   html+=`<div class="briefing-section"><div class="briefing-section-title">🔵 Próximos 3 dias <span class="briefing-count">${upcoming.length}</span></div>`;
   if(upcoming.length) upcoming.slice(0,5).forEach(t=>{
     const p=person(t.person);
-    html+=`<div class="briefing-item upcoming"><div style="flex:1"><div>${t.title}</div><div class="briefing-item-meta">${p.name} · ${formatDate(t.dueDate)}</div></div></div>`;
+    html+=`<div class="briefing-item upcoming"><div style="flex:1"><div>${esc(t.title)}</div><div class="briefing-item-meta">${esc(p.name)} · ${formatDate(t.dueDate)}</div></div></div>`;
   });
   else html+=`<div class="briefing-empty">Nada nos próximos 3 dias</div>`;
   html+=`</div>`;
@@ -266,7 +286,7 @@ function showBriefing(){
       const p=person(t.person);
       const created=t._created||t.dueDate||isoToday;
       const days=Math.floor((today-new Date(created+'T12:00:00'))/(1000*60*60*24));
-      html+=`<div class="briefing-item followup"><div style="flex:1"><div>${t.title}</div><div class="briefing-item-meta">Delegada a ${p.name} · ${days} dias sem update</div></div></div>`;
+      html+=`<div class="briefing-item followup"><div style="flex:1"><div>${esc(t.title)}</div><div class="briefing-item-meta">Delegada a ${esc(p.name)} · ${days} dias sem update</div></div></div>`;
     });
     html+=`</div>`;
   }
@@ -426,17 +446,17 @@ function cardHTML(t){
   return `
     <div class="card p-${t.priority} t-${t.tipo}" onclick="openPanel('${t.id}')">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:7px">
-        <div class="card-title">${t.title}</div>
+        <div class="card-title">${esc(t.title)}</div>
         <div class="card-check" onclick="event.stopPropagation();toggleDone('${t.id}')"></div>
       </div>
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority==='alta'?'▲':t.priority==='media'?'●':'▼'} ${t.priority.toUpperCase()}</span>
-        ${t.context?`<span class="tag origem">${t.context}</span>`:''}
+        ${t.context?`<span class="tag origem">${esc(t.context)}</span>`:''}
         <span class="tag dt ${over?'overdue':tod?'overdue':''}">${over?'⚠ ':tod?'★ ':''}${formatDate(t.dueDate)}</span>
         ${fub}
         ${t.recurrence?`<span class="tag" style="background:var(--grn2);color:var(--grn);font-size:9px">🔄 ${t.recurrence==='daily'?'Diária':t.recurrence==='weekly'?'Semanal':'Mensal'}</span>`:''}
       </div>
-      <div class="card-foot"><div class="card-person">${av(p,18)} ${p.name}</div></div>
+      <div class="card-foot"><div class="card-person">${av(p,18)} ${esc(p.name)}</div></div>
     </div>`;
 }
 
@@ -444,7 +464,7 @@ function cardDoneHTML(t){
   return `
     <div class="card" style="opacity:.4">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-        <div class="card-title" style="text-decoration:line-through;color:var(--t3)">${t.title}</div>
+        <div class="card-title" style="text-decoration:line-through;color:var(--t3)">${esc(t.title)}</div>
         <div class="card-check done" onclick="event.stopPropagation();toggleDone('${t.id}')">
           <svg width="7" height="7" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>
         </div>
@@ -477,7 +497,7 @@ function openPanel(id){
   const t=tasks.find(t=>t.id===id); if(!t) return;
   document.getElementById('detail-overlay').classList.add('open');
   document.getElementById('sp-body').innerHTML=`
-    <div class="sp-field"><div class="sp-label">Título</div><div class="sp-val" contenteditable="true" onblur="updateField('${id}','title',this.textContent.trim())">${t.title}</div></div>
+    <div class="sp-field"><div class="sp-label">Título</div><div class="sp-val" contenteditable="true" onblur="updateField('${id}','title',this.textContent.trim())">${esc(t.title)}</div></div>
     <div class="sp-field"><div class="sp-label">Prioridade</div>
       <div class="prio-row">
         <button class="pbtn alta ${t.priority==='alta'?'sel':''}" onclick="updateField('${id}','priority','alta')">Alta</button>
@@ -492,12 +512,12 @@ function openPanel(id){
       </div>
     </div>
     <div class="sp-field"><div class="sp-label">Responsável</div>
-      <div class="assign-wrap">${PEOPLE.map(p=>`<button class="asbtn ${t.person===p.id?'sel':''}" onclick="updateField('${id}','person','${p.id}')">${av(p,14)} ${p.name}</button>`).join('')}</div>
+      <div class="assign-wrap">${PEOPLE.map(p=>`<button class="asbtn ${t.person===p.id?'sel':''}" onclick="updateField('${id}','person','${p.id}')">${av(p,14)} ${esc(p.name)}</button>`).join('')}</div>
     </div>
     <div class="sp-field"><div class="sp-label">Data do Prazo</div><input type="date" class="date-input" value="${t.dueDate||''}" onchange="updateField('${id}','dueDate',this.value)"></div>
-    <div class="sp-field"><div class="sp-label">Origem / Reunião</div><input class="date-input" value="${t.context||''}" placeholder="Ex: 1:1 Junior" onblur="updateField('${id}','context',this.value)" style="font-family:var(--font-body)"></div>
+    <div class="sp-field"><div class="sp-label">Origem / Reunião</div><input class="date-input" value="${esc(t.context||'')}" placeholder="Ex: 1:1 Junior" onblur="updateField('${id}','context',this.value)" style="font-family:var(--font-body)"></div>
     ${t.recurrence?`<div class="sp-field"><div class="sp-label">Recorrência</div><select class="date-input" onchange="updateField('${id}','recurrence',this.value||null)"><option value="">Nenhuma</option><option value="daily" ${t.recurrence==='daily'?'selected':''}>Diária</option><option value="weekly" ${t.recurrence==='weekly'?'selected':''}>Semanal</option><option value="monthly" ${t.recurrence==='monthly'?'selected':''}>Mensal</option></select></div>`:''}
-    <div class="sp-field"><div class="sp-label">Notas</div><textarea class="sp-notes" placeholder="Próximos passos..." onblur="updateField('${id}','notes',this.value)">${t.notes||''}</textarea></div>
+    <div class="sp-field"><div class="sp-label">Notas</div><textarea class="sp-notes" placeholder="Próximos passos..." onblur="updateField('${id}','notes',this.value)">${esc(t.notes||'')}</textarea></div>
     <button class="sp-del" onclick="deleteTask('${id}')">Excluir tarefa</button>
   `;
 }
@@ -557,7 +577,7 @@ function renderPeople(){
     });
     col.innerHTML=`
       <div class="person-col-head" style="cursor:grab"><div class="big-av" style="background:${p.bg};color:${p.color}">${p.init}</div>
-        <div style="flex:1;min-width:0"><div class="person-col-name">${p.name}</div><div class="person-col-sub">${p.role}</div></div>
+        <div style="flex:1;min-width:0"><div class="person-col-name">${esc(p.name)}</div><div class="person-col-sub">${esc(p.role)}</div></div>
         <div class="col-ct">${pt.length}</div>
       </div>
       <div class="col-add" onclick="openTaskModal(null,'${p.id}')">
@@ -576,13 +596,13 @@ function personCardHTML(t){
   return `
     <div class="card p-${t.priority} t-${t.tipo}" onclick="openPanel('${t.id}')">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:7px">
-        <div class="card-title">${t.title}</div>
+        <div class="card-title">${esc(t.title)}</div>
         <div class="card-check" onclick="event.stopPropagation();toggleDone('${t.id}')"></div>
       </div>
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority.toUpperCase()}</span>
         <span class="tag dt ${over||tod?'overdue':''}">${over?'⚠ ':tod?'★ ':''}${formatDate(t.dueDate)}</span>
-        ${t.context?`<span class="tag origem">${t.context}</span>`:''}
+        ${t.context?`<span class="tag origem">${esc(t.context)}</span>`:''}
       </div>
     </div>`;
 }
@@ -609,7 +629,7 @@ function renderCal(){
       const cd=isoDate(new Date(yr,mo,d)), isT=cd===isoToday;
       const dt=tasks.filter(t=>t.dueDate===cd&&!t.done).sort((a,b)=>a.priority==='alta'?-1:1);
       html+=`<div class="cal-cell ${isT?'today':''}" onclick="openCalDayPopup('${cd}',${d})"><span class="cal-day-num">${d}</span>`;
-      dt.slice(0,3).forEach(t=>{ html+=`<div class="cal-task-pill ${t.priority}" onclick="event.stopPropagation();openPanel('${t.id}')">${t.title}</div>`; });
+      dt.slice(0,3).forEach(t=>{ html+=`<div class="cal-task-pill ${t.priority}" onclick="event.stopPropagation();openPanel('${t.id}')">${esc(t.title)}</div>`; });
       if(dt.length>3) html+=`<div class="cal-more">+${dt.length-3} mais</div>`;
       html+=`</div>`;
     }
@@ -629,7 +649,7 @@ function renderCal(){
       const wd=addDays(ws,d), cd=isoDate(wd);
       const dt=tasks.filter(t=>t.dueDate===cd&&!t.done);
       html+=`<div style="border-right:1px solid var(--b1);border-bottom:1px solid var(--b2);padding:4px;background:var(--s1);${isoDate(wd)===isoToday?'background:var(--acc3)':''}">`;
-      dt.forEach(t=>{ html+=`<div class="cal-task-pill ${t.priority}" onclick="openPanel('${t.id}')" style="margin-bottom:3px">${t.title}</div>`; });
+      dt.forEach(t=>{ html+=`<div class="cal-task-pill ${t.priority}" onclick="openPanel('${t.id}')" style="margin-bottom:3px">${esc(t.title)}</div>`; });
       if(!dt.length) html+=`<div style="font-size:10px;color:var(--t4);padding:2px">—</div>`;
       html+=`</div>`;
     }
@@ -654,21 +674,21 @@ function openCalDayPopup(dateStr, dayNum){
     const p=person(t.person);
     return `<div class="card p-${t.priority} t-${t.tipo}" onclick="event.stopPropagation();document.getElementById('cal-day-popup').remove();openPanel('${t.id}')" style="margin-bottom:6px">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:7px">
-        <div class="card-title">${t.title}</div>
+        <div class="card-title">${esc(t.title)}</div>
         <div class="card-check" onclick="event.stopPropagation();toggleDone('${t.id}');document.getElementById('cal-day-popup')?.remove()"></div>
       </div>
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority==='alta'?'▲':t.priority==='media'?'●':'▼'} ${t.priority.toUpperCase()}</span>
-        ${t.context?`<span class="tag origem">${t.context}</span>`:''}
+        ${t.context?`<span class="tag origem">${esc(t.context)}</span>`:''}
       </div>
-      <div class="card-foot"><div class="card-person">${av(p,16)} ${p.name}</div></div>
+      <div class="card-foot"><div class="card-person">${av(p,16)} ${esc(p.name)}</div></div>
     </div>`;
   }).join('');
 
   if(done.length){
     html+=`<div class="done-sep" style="margin:6px 0">✓ Concluídas (${done.length})</div>`;
     done.forEach(t=>{
-      html+=`<div class="card" style="opacity:.4;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px"><div class="card-title" style="text-decoration:line-through;color:var(--t3)">${t.title}</div></div></div>`;
+      html+=`<div class="card" style="opacity:.4;margin-bottom:4px"><div style="display:flex;align-items:center;gap:6px"><div class="card-title" style="text-decoration:line-through;color:var(--t3)">${esc(t.title)}</div></div></div>`;
     });
   }
 
@@ -678,12 +698,12 @@ function openCalDayPopup(dateStr, dayNum){
 
   document.body.insertAdjacentHTML('beforeend',`
     <div class="detail-overlay open" id="cal-day-popup" onclick="if(event.target===this)this.remove()">
-      <div class="side-panel" style="width:380px">
+      <div class="side-panel" style="width:380px" role="dialog" aria-modal="true" aria-labelledby="cal-day-popup-title">
         <div class="sp-head">
-          <span class="sp-title" style="text-transform:capitalize">${dateLabel}</span>
+          <span class="sp-title" id="cal-day-popup-title" style="text-transform:capitalize">${esc(dateLabel)}</span>
           <div style="display:flex;gap:6px;align-items:center">
-            <button class="oo-manage-btn" onclick="event.stopPropagation();document.getElementById('cal-day-popup').remove();openTaskModal(null,null,'${dateStr}')" title="Nova tarefa">+</button>
-            <button class="sp-close" onclick="document.getElementById('cal-day-popup').remove()">✕</button>
+            <button class="oo-manage-btn" onclick="event.stopPropagation();document.getElementById('cal-day-popup').remove();openTaskModal(null,null,'${dateStr}')" aria-label="Nova tarefa" title="Nova tarefa">+</button>
+            <button class="sp-close" onclick="document.getElementById('cal-day-popup').remove()" aria-label="Fechar">✕</button>
           </div>
         </div>
         <div class="sp-body">${html}</div>
@@ -705,7 +725,7 @@ function openTaskModal(_, personHint, dateHint){
   document.querySelector('#task-modal .tbtn.delegada').classList.add('sel');
   // Update person select from PEOPLE
   const sel=document.getElementById('m-person');
-  sel.innerHTML=PEOPLE.map(p=>`<option value="${p.id}">${p.name}${p.id==='lucas'?' (você)':''}</option>`).join('');
+  sel.innerHTML=PEOPLE.map(p=>`<option value="${p.id}">${esc(p.name)}${p.id==='lucas'?' (você)':''}</option>`).join('');
   document.getElementById('m-recurrence').value='';
   if(personHint) sel.value=personHint;
   if(dateHint) document.getElementById('m-date').value=dateHint;
@@ -946,7 +966,7 @@ function renderAIResults(ata, demands){
   demands.forEach((d,i)=>{
     const p=person(d.responsavel||'lucas');
     html+=`<div class="demand-item ${d.prioridade}" id="dem-${i}">
-      <div style="flex:1"><div class="demand-text">${d.titulo}</div><div class="demand-meta"><span class="tag ${d.prioridade}">${d.prioridade.toUpperCase()}</span><span class="tag ${d.tipo}">${d.tipo==='minha'?'Eu faço':'Delegada'}</span>${av(p,14)}<span style="font-size:11px;color:var(--t2)">${p.name}</span></div></div>
+      <div style="flex:1"><div class="demand-text">${esc(d.titulo)}</div><div class="demand-meta"><span class="tag ${d.prioridade}">${d.prioridade.toUpperCase()}</span><span class="tag ${d.tipo}">${d.tipo==='minha'?'Eu faço':'Delegada'}</span>${av(p,14)}<span style="font-size:11px;color:var(--t2)">${esc(p.name)}</span></div></div>
       <div class="demand-check" id="dchk-${i}" onclick="toggleDemand(${i})"></div>
     </div>`;
   });
@@ -1101,10 +1121,10 @@ function openPersonModal(editId){
   const eid=editId||'';
   document.body.insertAdjacentHTML('beforeend',`
     <div class="oo-modal-overlay" id="oo-person-modal" onclick="if(event.target===this)this.remove()">
-      <div class="oo-modal" onclick="event.stopPropagation()">
-        <h3>${t}</h3>
-        <div><label>Nome</label><input id="opm-name" value="${nm}" placeholder="Nome da pessoa"></div>
-        <div><label>Cargo / Papel</label><input id="opm-role" value="${rl}" placeholder="Ex: Diretor Comercial"></div>
+      <div class="oo-modal" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="oo-person-modal-title">
+        <h3 id="oo-person-modal-title">${esc(t)}</h3>
+        <div><label>Nome</label><input id="opm-name" value="${esc(nm)}" placeholder="Nome da pessoa"></div>
+        <div><label>Cargo / Papel</label><input id="opm-role" value="${esc(rl)}" placeholder="Ex: Diretor Comercial"></div>
         <div><label>Cor</label><div class="oo-color-grid" id="opm-colors">
           ${OO_COLORS.map(c=>`<div class="oo-color-opt ${c.hex===selColor?'sel':''}" style="background:${c.hex}" data-hex="${c.hex}" data-bg="${c.bg}" onclick="event.stopPropagation();document.querySelectorAll('.oo-color-opt').forEach(e=>e.classList.remove('sel'));this.classList.add('sel')"></div>`).join('')}
         </div></div>
@@ -1146,7 +1166,7 @@ window.savePersonModal=savePersonModal;
 
 function toggleHidePerson(pid){
   const p=PEOPLE.find(x=>x.id===pid);
-  if(p){ p.hidden=!p.hidden; saveOOState(); renderOneOne(); toast(p.hidden?`${p.name} oculto(a)`:`${p.name} visível`); }
+  if(p){ p.hidden=!p.hidden; saveOOState(); renderOneOne(); toast(p.hidden?`${esc(p.name)} oculto(a)`:`${esc(p.name)} visível`); }
 }
 
 function renderOneOne(){
@@ -1161,8 +1181,8 @@ function renderOneOne(){
       onclick="selectOO('${pid}')">
       ${av(pp,32)}<div style="flex:1;min-width:0"><div class="oo-person-name">${pp.name}</div><div class="oo-person-last">${pp.role}</div></div>
       <div class="oo-item-actions" onclick="event.stopPropagation()">
-        <button class="oo-item-btn" onclick="event.stopPropagation();openPersonModal('${pid}')" title="Editar">✎</button>
-        <button class="oo-item-btn" onclick="event.stopPropagation();toggleHidePerson('${pid}')" title="${pp.hidden?'Mostrar':'Ocultar'}">${pp.hidden?'👁':'🚫'}</button>
+        <button class="oo-item-btn" onclick="event.stopPropagation();openPersonModal('${pid}')" aria-label="Editar" title="Editar">✎</button>
+        <button class="oo-item-btn" onclick="event.stopPropagation();toggleHidePerson('${pid}')" aria-label="${pp.hidden?'Mostrar pessoa':'Ocultar pessoa'}" title="${pp.hidden?'Mostrar':'Ocultar'}">${pp.hidden?'👁':'🚫'}</button>
       </div>
       <div class="oo-badge">${pend}</div>
     </div>`;
@@ -1193,7 +1213,7 @@ function selectOO(pid){
   const p=person(pid), data=oo11[pid]; if(!data) return;
   document.getElementById('oo-main').innerHTML=`
     <div class="oo-head">
-      <div style="display:flex;align-items:center;gap:12px">${av(p,40)}<div><div class="oo-head-name">1:1 com ${p.name}</div><div class="oo-head-role">${p.role}</div></div></div>
+      <div style="display:flex;align-items:center;gap:12px">${av(p,40)}<div><div class="oo-head-name">1:1 com ${esc(p.name)}</div><div class="oo-head-role">${esc(p.role)}</div></div></div>
       <div class="oo-head-btns">
         <button class="btn-sm" onclick="switchNav('transcription',document.querySelectorAll('.nav-item')[3])">🎙️ Transcrever</button>
         <button class="btn-sm primary" onclick="addOOAction('${pid}')">+ Action Item</button>
@@ -1205,8 +1225,8 @@ function selectOO(pid){
         ${data.topics.map((t,i)=>`<div class="oo-topic">
           <div class="oo-topic-num">${i+1}</div><div class="oo-topic-text">${t}</div>
           <div class="oo-item-actions">
-            <button class="oo-item-btn" onclick="editOOTopic('${pid}',${i})" title="Editar">✎</button>
-            <button class="oo-item-btn del" onclick="delOOTopic('${pid}',${i})" title="Excluir">✕</button>
+            <button class="oo-item-btn" onclick="editOOTopic('${pid}',${i})" aria-label="Editar" title="Editar">✎</button>
+            <button class="oo-item-btn del" onclick="delOOTopic('${pid}',${i})" aria-label="Excluir" title="Excluir">✕</button>
           </div>
         </div>`).join('')}
       </div>
@@ -1222,10 +1242,10 @@ function selectOO(pid){
         <div class="oo-section-head"><div class="oo-section-title">🎯 Demandas em aberto</div></div>
         ${tasks.filter(t=>t.person===pid&&!t.done).slice(0,6).map(t=>`
           <div class="oo-action">
-            <div style="flex:1"><div class="oo-action-text">${t.title}</div><div class="oo-action-meta"><span class="tag ${t.priority}">${t.priority.toUpperCase()}</span><span class="tag dt">${formatDate(t.dueDate)}</span></div></div>
+            <div style="flex:1"><div class="oo-action-text">${esc(t.title)}</div><div class="oo-action-meta"><span class="tag ${t.priority}">${t.priority.toUpperCase()}</span><span class="tag dt">${formatDate(t.dueDate)}</span></div></div>
             <div class="oo-item-actions">
-              <button class="oo-item-btn" onclick="openPanel('${t.id}')" title="Editar">✎</button>
-              <button class="oo-item-btn del" onclick="if(confirm('Excluir demanda?')){deleteTask('${t.id}');selectOO('${pid}')}" title="Excluir">✕</button>
+              <button class="oo-item-btn" onclick="openPanel('${t.id}')" aria-label="Editar" title="Editar">✎</button>
+              <button class="oo-item-btn del" onclick="if(confirm('Excluir demanda?')){deleteTask('${t.id}');selectOO('${pid}')}" aria-label="Excluir" title="Excluir">✕</button>
             </div>
             <div class="oo-action-chk ${t.done?'done':''}" onclick="toggleDone('${t.id}');selectOO('${pid}')"></div>
           </div>`).join('') || '<div style="font-size:12px;color:var(--t3);padding:6px 0">Nenhuma demanda em aberto.</div>'}
@@ -1255,15 +1275,15 @@ async function loadOOMeetings(pid){
           <div style="flex:1">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
               <span class="tag dt" style="font-size:10px">${formatDate(m.meeting_date)}</span>
-              <span class="oo-topic-text" style="font-weight:500">${m.title||'Reunião'}</span>
+              <span class="oo-topic-text" style="font-weight:500">${esc(m.title||'Reunião')}</span>
             </div>
-            <div style="font-size:11px;color:var(--t3)">${preview}${preview.length>=120?'...':''}</div>
-            <div class="oo-ata-full" style="display:none;margin-top:8px;font-size:12px;color:var(--t2);line-height:1.7;white-space:pre-line;border-top:1px solid var(--b1);padding-top:8px">${m.ata||'Sem ata disponível.'}</div>
+            <div style="font-size:11px;color:var(--t3)">${esc(preview)}${preview.length>=120?'...':''}</div>
+            <div class="oo-ata-full" style="display:none;margin-top:8px;font-size:12px;color:var(--t2);line-height:1.7;white-space:pre-line;border-top:1px solid var(--b1);padding-top:8px">${esc(m.ata||'Sem ata disponível.')}</div>
           </div>
         </div>`;
       });
     } else {
-      html+=`<div style="font-size:12px;color:var(--t4);padding:4px 0">Nenhuma reunião com ${p.name} encontrada.</div>`;
+      html+=`<div style="font-size:12px;color:var(--t4);padding:4px 0">Nenhuma reunião com ${esc(p.name)} encontrada.</div>`;
     }
     el.innerHTML=html;
   } catch(e){ console.error('loadOOMeetings:',e); }
@@ -1273,10 +1293,10 @@ function renderOOActions(pid){
   const data=oo11[pid]; if(!data) return '';
   return data.actions.map((a,i)=>`
     <div class="oo-action">
-      <div style="flex:1"><div class="oo-action-text">${a.done?`<s style="color:var(--t3)">${a.text}</s>`:a.text}</div><div class="oo-action-meta"><span class="tag ${a.prio}">${a.prio.toUpperCase()}</span></div></div>
+      <div style="flex:1"><div class="oo-action-text">${a.done?`<s style="color:var(--t3)">${esc(a.text)}</s>`:esc(a.text)}</div><div class="oo-action-meta"><span class="tag ${a.prio}">${a.prio.toUpperCase()}</span></div></div>
       <div class="oo-item-actions">
-        <button class="oo-item-btn" onclick="editOOAction('${pid}',${i})" title="Editar">✎</button>
-        <button class="oo-item-btn del" onclick="delOOAction('${pid}',${i})" title="Excluir">✕</button>
+        <button class="oo-item-btn" onclick="editOOAction('${pid}',${i})" aria-label="Editar" title="Editar">✎</button>
+        <button class="oo-item-btn del" onclick="delOOAction('${pid}',${i})" aria-label="Excluir" title="Excluir">✕</button>
       </div>
       <div class="oo-action-chk ${a.done?'done':''}" onclick="toggleOOAct('${pid}',${i})">
         ${a.done?`<svg width="7" height="7" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="white" stroke-width="1.5" stroke-linecap="round"/></svg>`:''}
@@ -1330,7 +1350,7 @@ function renderMeetingsList(){
     const parts=pArr.join(', ')||'Sem participantes';
     return `<div class="reun-card ${reunSelected===m.id?'active':''}" onclick="selectMeeting('${m.id}')">
       <div class="reun-card-date"><div class="reun-card-day">${day}</div><div class="reun-card-mon">${mon}</div></div>
-      <div class="reun-card-info"><div class="reun-card-title">${m.title||'Reunião'}</div><div class="reun-card-sub">${parts}</div></div>
+      <div class="reun-card-info"><div class="reun-card-title">${esc(m.title||'Reunião')}</div><div class="reun-card-sub">${esc(parts)}</div></div>
     </div>`;
   }).join('');
 }
@@ -1387,7 +1407,7 @@ async function selectMeeting(id){
   el.innerHTML=`
     <div class="reun-head">
       <div>
-        <div class="reun-head-title">${m.title||'Reunião'}</div>
+        <div class="reun-head-title">${esc(m.title||'Reunião')}</div>
         <div class="reun-head-date">${formatDate(m.meeting_date)}</div>
       </div>
       <div class="reun-head-btns">
@@ -1403,7 +1423,7 @@ async function selectMeeting(id){
 
       <div class="oo-section">
         <div class="oo-section-head"><div class="oo-section-title">📝 Ata</div></div>
-        <div class="reun-ata">${m.ata||'Sem ata disponível.'}</div>
+        <div class="reun-ata">${esc(m.ata||'Sem ata disponível.')}</div>
       </div>
 
       <div class="oo-section">
@@ -1418,14 +1438,14 @@ async function selectMeeting(id){
 
       ${m.transcript?`<div class="oo-section">
         <div class="oo-section-head"><div class="oo-section-title">🎙️ Transcrição</div></div>
-        <div class="reun-ata" style="max-height:200px;overflow-y:auto;font-size:11.5px">${m.transcript}</div>
+        <div class="reun-ata" style="max-height:200px;overflow-y:auto;font-size:11.5px">${esc(m.transcript)}</div>
       </div>`:''}
 
       <div class="oo-section">
         <div class="oo-section-head">
           <div class="oo-section-title">📒 Anotações</div>
         </div>
-        <textarea class="oo-note-area" placeholder="Anotações livres sobre esta reunião..." onblur="saveMeetingNotes('${m.id}',this.value)">${m.notes||''}</textarea>
+        <textarea class="oo-note-area" placeholder="Anotações livres sobre esta reunião..." onblur="saveMeetingNotes('${m.id}',this.value)">${esc(m.notes||'')}</textarea>
       </div>
     </div>`;
 }
@@ -1433,8 +1453,8 @@ async function selectMeeting(id){
 function openNewMeetingModal(){
   document.body.insertAdjacentHTML('beforeend',`
     <div class="oo-modal-overlay" id="new-meeting-modal" onclick="if(event.target===this)this.remove()">
-      <div class="oo-modal" onclick="event.stopPropagation()" style="width:420px">
-        <h3>Nova Reunião</h3>
+      <div class="oo-modal" onclick="event.stopPropagation()" style="width:420px" role="dialog" aria-modal="true" aria-labelledby="new-meeting-modal-title">
+        <h3 id="new-meeting-modal-title">Nova Reunião</h3>
         <div><label>Título</label><input id="nm-title" placeholder="Ex: Alinhamento semanal"></div>
         <div><label>Data</label><input type="date" id="nm-date" value="${isoToday}"></div>
         <div><label>Participantes (separados por vírgula)</label><input id="nm-parts" placeholder="Ex: Ana, João, Pedro"></div>

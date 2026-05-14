@@ -65,6 +65,13 @@
 html,body{height:100%;overflow:hidden}
 body{font-family:var(--font-body);background:var(--bg);color:var(--t1)}
 
+/* ── A11Y FOUNDATIONS ── */
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:4px}
+*:focus:not(:focus-visible){outline:none}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+}
+
 /* ── AUTH SCREEN ── */
 #auth-screen {
   position:fixed;inset:0;z-index:999;
@@ -136,7 +143,7 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--t1)}
 
 /* ── TOPBAR ── */
 .topbar{height:52px;border-bottom:1px solid var(--b1);display:flex;align-items:center;padding:0 24px;gap:16px;background:var(--s1);flex-shrink:0}
-.topbar-title{font-family:var(--font-display);font-size:18px;color:var(--t1);letter-spacing:-.01em}
+.topbar-title{font-family:var(--font-display);font-size:18px;font-weight:500;color:var(--t1);letter-spacing:-.01em;line-height:1.2}
 .topbar-sep{flex:1}
 .topbar-date{font-family:var(--font-mono);font-size:11px;color:var(--t3);letter-spacing:.06em}
 
