@@ -256,7 +256,7 @@ function showBriefing(){
   let html='';
 
   // Overdue
-  html+=`<div class="briefing-section"><div class="briefing-section-title">🔴 Atrasadas <span class="briefing-count">${overdue.length}</span></div>`;
+  html+=`<div class="briefing-section"><div class="briefing-section-title"><span class="dot" style="background:var(--rust)"></span>Atrasadas <span class="briefing-count">${overdue.length}</span></div>`;
   if(overdue.length) overdue.slice(0,5).forEach(t=>{
     const p=person(t.person);
     html+=`<div class="briefing-item overdue"><div style="flex:1"><div>${esc(t.title)}</div><div class="briefing-item-meta">${esc(p.name)} · ${formatDate(t.dueDate)} · <span class="tag ${t.priority}" style="font-size:9px">${t.priority.toUpperCase()}</span></div></div></div>`;
@@ -265,7 +265,7 @@ function showBriefing(){
   html+=`</div>`;
 
   // Today
-  html+=`<div class="briefing-section"><div class="briefing-section-title">🟠 Hoje <span class="briefing-count">${todayTasks.length}</span></div>`;
+  html+=`<div class="briefing-section"><div class="briefing-section-title"><span class="dot" style="background:var(--saff)"></span>Hoje <span class="briefing-count">${todayTasks.length}</span></div>`;
   if(todayTasks.length) todayTasks.forEach(t=>{
     const p=person(t.person);
     html+=`<div class="briefing-item today"><div style="flex:1"><div>${esc(t.title)}</div><div class="briefing-item-meta">${esc(p.name)} · <span class="tag ${t.priority}" style="font-size:9px">${t.priority.toUpperCase()}</span> · ${t.tipo==='minha'?'Eu faço':'Delegada'}</div></div></div>`;
@@ -274,7 +274,7 @@ function showBriefing(){
   html+=`</div>`;
 
   // Upcoming
-  html+=`<div class="briefing-section"><div class="briefing-section-title">🔵 Próximos 3 dias <span class="briefing-count">${upcoming.length}</span></div>`;
+  html+=`<div class="briefing-section"><div class="briefing-section-title"><span class="dot" style="background:var(--acc)"></span>Próximos 3 dias <span class="briefing-count">${upcoming.length}</span></div>`;
   if(upcoming.length) upcoming.slice(0,5).forEach(t=>{
     const p=person(t.person);
     html+=`<div class="briefing-item upcoming"><div style="flex:1"><div>${esc(t.title)}</div><div class="briefing-item-meta">${esc(p.name)} · ${formatDate(t.dueDate)}</div></div></div>`;
@@ -284,7 +284,7 @@ function showBriefing(){
 
   // Follow-ups
   if(followups.length){
-    html+=`<div class="briefing-section"><div class="briefing-section-title">🟡 Follow-ups pendentes <span class="briefing-count">${followups.length}</span></div>`;
+    html+=`<div class="briefing-section"><div class="briefing-section-title"><span class="dot" style="background:var(--bronze)"></span>Follow-ups pendentes <span class="briefing-count">${followups.length}</span></div>`;
     followups.slice(0,5).forEach(t=>{
       const p=person(t.person);
       const created=t._created||t.dueDate||isoToday;
@@ -436,7 +436,7 @@ function followupBadge(t){
   if(t.tipo!=='delegada'||t.done) return '';
   const ref=t.dueDate||isoToday;
   const days=Math.floor((today-new Date(ref+'T12:00:00'))/(1000*60*60*24));
-  if(days>=7) return `<span class="tag" style="background:var(--red2);color:var(--red);font-size:9px">Dia ${days} ⚠</span>`;
+  if(days>=7) return `<span class="tag" style="background:var(--rust-bg);color:var(--rust);font-size:9px;font-weight:600">Dia ${days}</span>`;
   if(days>=5) return `<span class="tag" style="background:var(--org2);color:var(--org);font-size:9px">Dia ${days}</span>`;
   if(days>=2) return `<span class="tag" style="background:var(--acc2);color:var(--acc);font-size:9px">Dia ${days}</span>`;
   return '';
@@ -455,9 +455,9 @@ function cardHTML(t){
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority==='alta'?'▲':t.priority==='media'?'●':'▼'} ${t.priority.toUpperCase()}</span>
         ${t.context?`<span class="tag origem">${esc(t.context)}</span>`:''}
-        <span class="tag dt ${over?'overdue':tod?'overdue':''}">${over?'⚠ ':tod?'★ ':''}${formatDate(t.dueDate)}</span>
+        <span class="tag dt ${over?'overdue':tod?'overdue':''}">${formatDate(t.dueDate)}</span>
         ${fub}
-        ${t.recurrence?`<span class="tag" style="background:var(--grn2);color:var(--grn);font-size:9px">🔄 ${t.recurrence==='daily'?'Diária':t.recurrence==='weekly'?'Semanal':'Mensal'}</span>`:''}
+        ${t.recurrence?`<span class="tag" style="background:var(--moss-bg);color:var(--moss);font-size:9px">↻ ${t.recurrence==='daily'?'Diária':t.recurrence==='weekly'?'Semanal':'Mensal'}</span>`:''}
       </div>
       <div class="card-foot"><div class="card-person">${av(p,18)} ${esc(p.name)}</div></div>
     </div>`;
@@ -604,7 +604,7 @@ function personCardHTML(t){
       </div>
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority.toUpperCase()}</span>
-        <span class="tag dt ${over||tod?'overdue':''}">${over?'⚠ ':tod?'★ ':''}${formatDate(t.dueDate)}</span>
+        <span class="tag dt ${over||tod?'overdue':''}">${formatDate(t.dueDate)}</span>
         ${t.context?`<span class="tag origem">${esc(t.context)}</span>`:''}
       </div>
     </div>`;
@@ -1186,7 +1186,7 @@ function renderOneOne(){
       ${av(pp,32)}<div style="flex:1;min-width:0"><div class="oo-person-name">${esc(pp.name)}</div><div class="oo-person-last">${esc(pp.role)}</div></div>
       <div class="oo-item-actions" onclick="event.stopPropagation()">
         <button class="oo-item-btn" onclick="event.stopPropagation();openPersonModal('${pid}')" aria-label="Editar" title="Editar">✎</button>
-        <button class="oo-item-btn" onclick="event.stopPropagation();toggleHidePerson('${pid}')" aria-label="${pp.hidden?'Mostrar pessoa':'Ocultar pessoa'}" title="${pp.hidden?'Mostrar':'Ocultar'}">${pp.hidden?'👁':'🚫'}</button>
+        <button class="oo-item-btn" onclick="event.stopPropagation();toggleHidePerson('${pid}')" aria-label="${pp.hidden?'Mostrar pessoa':'Ocultar pessoa'}" title="${pp.hidden?'Mostrar':'Ocultar'}">${pp.hidden?'<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.5 8c1.5-3 4-5 6.5-5s5 2 6.5 5c-1.5 3-4 5-6.5 5S3 11 1.5 8z" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5"/></svg>':'<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 3l10 10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5.5 5.5C3.5 6.5 2 8 1.5 8c1.5 3 4 5 6.5 5 1.3 0 2.4-.4 3.5-1M9 4.2c2.5.5 4.5 2.5 5.5 3.8-.5 1-1.2 2-2.2 2.7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'}</button>
       </div>
       <div class="oo-badge">${pend}</div>
     </div>`;
@@ -1219,13 +1219,13 @@ function selectOO(pid){
     <div class="oo-head">
       <div style="display:flex;align-items:center;gap:12px">${av(p,40)}<div><div class="oo-head-name">1:1 com ${esc(p.name)}</div><div class="oo-head-role">${esc(p.role)}</div></div></div>
       <div class="oo-head-btns">
-        <button class="btn-sm" onclick="switchNav('transcription',document.querySelectorAll('.nav-item')[3])">🎙️ Transcrever</button>
+        <button class="btn-sm" onclick="switchNav('transcription',document.querySelectorAll('.nav-item')[3])">Transcrever reunião</button>
         <button class="btn-sm primary" onclick="addOOAction('${pid}')">+ Action Item</button>
       </div>
     </div>
     <div class="oo-body">
       <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">📋 Pauta</div><button class="oo-section-add" onclick="addOOTopic('${pid}')">+ Tópico</button></div>
+        <div class="oo-section-head"><div class="oo-section-title">Pauta</div><button class="oo-section-add" onclick="addOOTopic('${pid}')">+ Tópico</button></div>
         ${data.topics.map((t,i)=>`<div class="oo-topic">
           <div class="oo-topic-num">${i+1}</div><div class="oo-topic-text">${t}</div>
           <div class="oo-item-actions">
@@ -1235,15 +1235,15 @@ function selectOO(pid){
         </div>`).join('')}
       </div>
       <div class="oo-section" id="oo-act-${pid}">
-        <div class="oo-section-head"><div class="oo-section-title">⚡ Action Items</div></div>
+        <div class="oo-section-head"><div class="oo-section-title">Action items</div></div>
         ${renderOOActions(pid)}
       </div>
       <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">📝 Notas</div></div>
+        <div class="oo-section-head"><div class="oo-section-title">Notas</div></div>
         <textarea class="oo-note-area" placeholder="Anotações da conversa..." onblur="oo11['${pid}'].notes=this.value;saveOOState()">${data.notes||''}</textarea>
       </div>
       <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">🎯 Demandas em aberto</div></div>
+        <div class="oo-section-head"><div class="oo-section-title">Demandas em aberto</div></div>
         ${tasks.filter(t=>t.person===pid&&!t.done).slice(0,6).map(t=>`
           <div class="oo-action">
             <div style="flex:1"><div class="oo-action-text">${esc(t.title)}</div><div class="oo-action-meta"><span class="tag ${t.priority}">${t.priority.toUpperCase()}</span><span class="tag dt">${formatDate(t.dueDate)}</span></div></div>
@@ -1255,7 +1255,7 @@ function selectOO(pid){
           </div>`).join('') || '<div style="font-size:12px;color:var(--t3);padding:6px 0">Nenhuma demanda em aberto.</div>'}
       </div>
       <div class="oo-section" id="oo-meetings-${pid}">
-        <div class="oo-section-head"><div class="oo-section-title">📅 Reuniões Anteriores</div></div>
+        <div class="oo-section-head"><div class="oo-section-title">Reuniões anteriores</div></div>
         <div style="font-size:12px;color:var(--t4);padding:4px 0">Carregando...</div>
       </div>
     </div>`;
@@ -1268,10 +1268,10 @@ async function loadOOMeetings(pid){
   try {
     const p=person(pid);
     const { data,error }=await sb.from('cmd_meetings').select('id,title,meeting_date,ata').order('meeting_date',{ascending:false}).limit(5);
-    if(error||!data){ el.innerHTML=`<div class="oo-section-head"><div class="oo-section-title">📅 Reuniões Anteriores</div></div><div style="font-size:12px;color:var(--t4);padding:4px 0">Nenhuma reunião encontrada.</div>`; return; }
+    if(error||!data){ el.innerHTML=`<div class="oo-section-head"><div class="oo-section-title">Reuniões anteriores</div></div><div style="font-size:12px;color:var(--t4);padding:4px 0">Nenhuma reunião encontrada.</div>`; return; }
     // Filter meetings that mention this person's name
     const relevant=data.filter(m=>(m.title||'').toLowerCase().includes(p.name.toLowerCase())||(m.ata||'').toLowerCase().includes(p.name.toLowerCase()));
-    let html=`<div class="oo-section-head"><div class="oo-section-title">📅 Reuniões Anteriores</div></div>`;
+    let html=`<div class="oo-section-head"><div class="oo-section-title">Reuniões anteriores</div></div>`;
     if(relevant.length){
       relevant.forEach(m=>{
         const preview=(m.ata||'').substring(0,120).replace(/\n/g,' ');
@@ -1310,7 +1310,7 @@ function renderOOActions(pid){
 
 function ooData(pid){ if(!oo11[pid]) oo11[pid]={topics:[],actions:[],notes:''}; return oo11[pid]; }
 
-function toggleOOAct(pid,i){ const d=ooData(pid); d.actions[i].done=!d.actions[i].done; saveOOState(); const el=document.getElementById(`oo-act-${pid}`); if(el){ el.innerHTML=`<div class="oo-section-head"><div class="oo-section-title">⚡ Action Items</div></div>${renderOOActions(pid)}`; } renderOneOne(); }
+function toggleOOAct(pid,i){ const d=ooData(pid); d.actions[i].done=!d.actions[i].done; saveOOState(); const el=document.getElementById(`oo-act-${pid}`); if(el){ el.innerHTML=`<div class="oo-section-head"><div class="oo-section-title">Action items</div></div>${renderOOActions(pid)}`; } renderOneOne(); }
 function addOOAction(pid){ const txt=prompt('Novo action item:'); if(!txt) return; const prio=prompt('Prioridade (alta/media/baixa):','media')||'media'; ooData(pid).actions.push({text:txt,done:false,prio}); saveOOState(); selectOO(pid); }
 function addOOTopic(pid){ const txt=prompt('Novo tópico de pauta:'); if(!txt) return; ooData(pid).topics.push(txt); saveOOState(); selectOO(pid); }
 
@@ -1421,33 +1421,33 @@ async function selectMeeting(id){
     </div>
     <div class="reun-body">
       <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">👥 Participantes</div></div>
+        <div class="oo-section-head"><div class="oo-section-title">Participantes</div></div>
         <div class="reun-participants">${partsHtml||'<span style="font-size:12px;color:var(--t4)">Sem participantes</span>'}</div>
       </div>
 
       <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">📝 Ata</div></div>
+        <div class="oo-section-head"><div class="oo-section-title">Ata</div></div>
         <div class="reun-ata">${esc(m.ata||'Sem ata disponível.')}</div>
       </div>
 
       <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">⚡ Demandas</div></div>
+        <div class="oo-section-head"><div class="oo-section-title">Demandas</div></div>
         ${demandsHtml}
       </div>
 
       <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">📌 Tarefas Vinculadas</div></div>
+        <div class="oo-section-head"><div class="oo-section-title">Tarefas vinculadas</div></div>
         ${tasksHtml}
       </div>
 
       ${m.transcript?`<div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">🎙️ Transcrição</div></div>
+        <div class="oo-section-head"><div class="oo-section-title">Transcrição</div></div>
         <div class="reun-ata" style="max-height:200px;overflow-y:auto;font-size:11.5px">${esc(m.transcript)}</div>
       </div>`:''}
 
       <div class="oo-section">
         <div class="oo-section-head">
-          <div class="oo-section-title">📒 Anotações</div>
+          <div class="oo-section-title">Anotações</div>
         </div>
         <textarea class="oo-note-area" placeholder="Anotações livres sobre esta reunião..." onblur="saveMeetingNotes('${m.id}',this.value)">${esc(m.notes||'')}</textarea>
       </div>
@@ -1520,7 +1520,7 @@ async function deleteMeeting(id){
   allMeetings=allMeetings.filter(x=>x.id!==id);
   reunSelected=null;
   renderMeetingsList();
-  document.getElementById('reun-main').innerHTML='<div class="reun-empty"><div style="text-align:center"><div style="font-size:40px;margin-bottom:12px;opacity:.3">📋</div><div>Selecione ou crie uma reunião</div></div></div>';
+  document.getElementById('reun-main').innerHTML='<div class="reun-empty"><div style="text-align:center"><svg width="32" height="32" viewBox="0 0 16 16" fill="none" style="margin-bottom:12px;opacity:.3" aria-hidden="true"><rect x="3" y="3" width="10" height="11.5" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="5.5" y="1.5" width="5" height="3" rx="0.5" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8.5h5M5.5 11h3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><div>Selecione ou crie uma reunião</div></div></div>';
   toast('Reunião excluída');
 }
 

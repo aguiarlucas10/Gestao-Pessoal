@@ -70,6 +70,8 @@ body{font-family:var(--font-body);background:var(--bg);color:var(--t1)}
 *:focus:not(:focus-visible){outline:none}
 /* Button reset so existing class styles take over when <div onclick> → <button> */
 button{font:inherit;color:inherit;background:transparent;border:none;padding:0;margin:0;cursor:pointer;text-align:inherit;line-height:inherit}
+/* Generic colored dot indicator (semantic category, replaces emoji circle markers) */
+.dot{display:inline-block;width:7px;height:7px;border-radius:50%;flex-shrink:0;vertical-align:middle;margin-right:6px}
 /* Buttons that replaced full-width divs need explicit width to keep layout */
 .nav-item,.col-add,.notif-item,.cal-task-pill,.reun-card,.oo-topic{width:100%}
 .cal-task-pill{display:block}
@@ -132,7 +134,7 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 .nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--t2);transition:all .15s;border:1px solid transparent}
 .nav-item:hover{background:var(--s2);color:var(--t1)}
 .nav-item.active{background:var(--acc2);color:var(--acc);border-color:var(--acc-rg)}
-.nav-icon{font-size:14px;width:18px;text-align:center}
+.nav-icon{width:14px;height:14px;flex-shrink:0;color:currentColor}
 .nav-badge{margin-left:auto;font-family:var(--font-mono);font-size:10px;background:var(--s3);color:var(--t2);padding:1px 7px;border-radius:99px}
 .nav-item.active .nav-badge{background:var(--acc-rg);color:var(--acc)}
 .nav-footer{margin-top:auto;padding:14px;border-top:1px solid var(--b1);display:flex;flex-direction:column;gap:8px}
@@ -187,9 +189,14 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 /* ── BOARD ── */
 #view-board{flex-direction:column}
 .board-toolbar{padding:12px 20px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:10px;flex-shrink:0;background:var(--s1)}
-.fchip{display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:99px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--b1);background:transparent;color:var(--t3);font-family:var(--font-body);transition:all .15s;white-space:nowrap}
+.fchip{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:99px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--b1);background:transparent;color:var(--t3);font-family:var(--font-body);transition:all .15s;white-space:nowrap}
 .fchip:hover{color:var(--t1)}
 .fchip.on{border-color:currentColor}
+/* Priority dot before label (replaces 🔴🟡🟢 emoji) */
+.fchip.f-alta::before,.fchip.f-media::before,.fchip.f-baixa::before{content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.fchip.f-alta::before{background:var(--rust)}
+.fchip.f-media::before{background:var(--bronze)}
+.fchip.f-baixa::before{background:var(--moss)}
 .fchip.f-all.on{color:var(--t1);background:var(--s2)}
 .fchip.f-alta.on{color:var(--red);background:var(--red2);border-color:var(--rust)}
 .fchip.f-media.on{color:var(--org);background:var(--org2);border-color:var(--bronze)}
@@ -218,10 +225,8 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 
 .card{background:var(--bg);border:1px solid var(--b1);border-radius:9px;padding:11px 12px;cursor:pointer;transition:all .2s;position:relative}
 .card.t-delegada{background:var(--plum-bg);border-color:var(--b1)}
-.card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
-.card.p-alta::before{background:var(--red)}
-.card.p-media::before{background:var(--org)}
-.card.p-baixa::before{background:var(--grn)}
+/* Prioridade visual feita pela <span class="tag .alta/media/baixa"> dentro do card.
+   Side-stripes removidas (Fase 4 distill — banimento absoluto Officio). */
 .card:hover{border-color:var(--b2);transform:translateY(-2px);box-shadow:var(--shadow-2)}
 .card-title{font-size:12.5px;font-weight:400;line-height:1.45;color:var(--t1);margin-bottom:8px}
 .card-tags{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-bottom:8px}
@@ -309,7 +314,7 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 .meta-input::placeholder{color:var(--t4)}
 .transcript-area{flex:1;display:flex;flex-direction:column;overflow:hidden;padding:0}
 .transcript-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--t3);text-align:center;padding:20px}
-.transcript-empty .ei{font-size:40px;opacity:.4}
+.transcript-empty .ei{opacity:.35;color:var(--t3)}
 .trans-textarea{flex:1;background:var(--bg);border:none;padding:16px 20px;font-size:13px;line-height:1.8;color:var(--t1);font-family:var(--font-body);resize:none;outline:none;overflow-y:auto}
 .trans-textarea::-webkit-scrollbar{width:4px}
 .trans-textarea::-webkit-scrollbar-thumb{background:var(--b2);border-radius:99px}
@@ -329,10 +334,9 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 @keyframes spin{to{transform:rotate(360deg)}}
 .ai-ata{background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:12px;font-size:12px;color:var(--t2);line-height:1.7;white-space:pre-line}
 .demand-item{display:flex;align-items:flex-start;gap:10px;background:var(--bg);border:1px solid var(--b1);border-radius:8px;padding:10px 12px;cursor:pointer;transition:all .15s;position:relative;overflow:hidden}
-.demand-item::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
-.demand-item.alta::before{background:var(--red)}
-.demand-item.media::before{background:var(--org)}
-.demand-item.baixa::before{background:var(--grn)}
+.demand-item.alta{border-color:var(--rust-bg)}
+.demand-item.media{border-color:var(--bronze-bg)}
+.demand-item.baixa{border-color:var(--moss-bg)}
 .demand-item:hover{border-color:var(--b2)}
 .demand-text{font-size:12px;color:var(--t1);flex:1;line-height:1.4}
 .demand-meta{display:flex;align-items:center;gap:6px;margin-top:5px}
@@ -377,7 +381,7 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 .oo-topic-num{font-family:var(--font-mono);font-size:11px;color:var(--t4);min-width:20px}
 .oo-topic-text{font-size:12.5px;color:var(--t1);flex:1;line-height:1.5}
 .oo-action{display:flex;align-items:flex-start;gap:10px;padding:9px 12px;background:var(--bg);border:1px solid var(--b1);border-radius:8px;transition:all .15s;position:relative;overflow:hidden}
-.oo-action::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--acc)}
+/* oo-action: identidade visual vem do border + hover, não da stripe lateral */
 .oo-action:hover{border-color:var(--b2)}
 .oo-action-text{font-size:12px;color:var(--t1);flex:1}
 .oo-action-meta{display:flex;gap:6px;align-items:center;margin-top:4px}
@@ -499,10 +503,10 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 .briefing-section-title{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--t3);display:flex;align-items:center;gap:6px}
 .briefing-count{background:var(--s3);color:var(--t2);padding:1px 7px;border-radius:99px;font-size:9px}
 .briefing-item{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;background:var(--s2);border:1px solid var(--b1);border-radius:8px;font-size:12px;color:var(--t1);line-height:1.5}
-.briefing-item.overdue{border-left:3px solid var(--red)}
-.briefing-item.today{border-left:3px solid var(--org)}
-.briefing-item.upcoming{border-left:3px solid var(--acc)}
-.briefing-item.followup{border-left:3px solid var(--yel)}
+.briefing-item.overdue{border-color:var(--rust-bg);background:color-mix(in oklch, var(--rust-bg), var(--s2) 60%)}
+.briefing-item.today{border-color:var(--saff-bg);background:color-mix(in oklch, var(--saff-bg), var(--s2) 60%)}
+.briefing-item.upcoming{border-color:var(--acc-bg);background:color-mix(in oklch, var(--acc-bg), var(--s2) 60%)}
+.briefing-item.followup{border-color:var(--bronze-bg);background:color-mix(in oklch, var(--bronze-bg), var(--s2) 60%)}
 .briefing-item-meta{font-size:10px;color:var(--t3);margin-top:2px}
 .briefing-empty{font-size:12px;color:var(--t4);padding:4px 0}
 .briefing-footer{padding:16px 28px;border-top:1px solid var(--b1);display:flex;justify-content:flex-end}
