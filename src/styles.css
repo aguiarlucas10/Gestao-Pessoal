@@ -556,8 +556,9 @@ select.modal-input{cursor:pointer}
 .toast.error{border-color:var(--rust)}
 .toast.info{border-color:var(--acc-rg)}
 
-@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-.card{animation:fadeIn .25s ease both}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+/* Cards não animam a cada render (search/filter trash). Animação aplicada apenas em
+   inline forms via .oo-inline-form. Cards reaparecem instantaneamente. */
 
 /* ── HAMBURGER ── */
 .nav-toggle{display:none;background:none;border:none;color:var(--t1);font-size:20px;cursor:pointer;padding:8px 12px;position:fixed;top:8px;left:8px;z-index:201}
@@ -569,6 +570,8 @@ select.modal-input{cursor:pointer}
   .oneone-list{width:240px}
 }
 @media(max-width:768px){
+  /* Performance: blur custa caro em GPU mobile. Overlay sólido funciona igualmente bem. */
+  .briefing-overlay,.modal-overlay{backdrop-filter:none}
   .nav-toggle{display:block}
   .nav{position:fixed;left:-260px;top:0;bottom:0;width:240px;z-index:200;transition:left .25s ease;box-shadow:none}
   .nav.open{left:0;box-shadow:4px 0 30px oklch(20% 0.01 60 / 0.18)}

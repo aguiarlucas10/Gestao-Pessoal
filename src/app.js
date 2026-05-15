@@ -46,6 +46,11 @@ function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 // Keyboard activation for container elements with role="button" (containers that hold nested buttons,
 // so they can't be actual <button> due to HTML nesting rules). Triggers the same click handler on Enter/Space.
 function kbd(e){ if(e.key==='Enter'||e.key===' '){e.preventDefault();e.currentTarget.click()} }
+// Debounce — adia execução até N ms sem nova chamada. Evita rerender a cada keystroke do search.
+function debounce(fn,ms=150){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args),ms); } }
+// Debounced renderers para search inputs (renderBoard/renderPeople são hoisted, então OK referenciar aqui)
+const debouncedRenderBoard=debounce(()=>renderBoard(),150);
+const debouncedRenderPeople=debounce(()=>renderPeople(),150);
 function av(p,size=18){ return `<div class="av" style="width:${size}px;height:${size}px;background:${p.bg};color:${p.color};font-size:${Math.round(size*0.42)}px">${esc(p.init)}</div>`; }
 function formatDate(s){ if(!s) return '—'; const d=new Date(s+'T12:00:00'); return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}); }
 function isOverdue(s){ return s && new Date(s+'T23:59:59')<today && s!==isoToday; }
@@ -154,13 +159,13 @@ async function loadTasks(){
   for(let attempt=0; attempt<2; attempt++){
     try {
       const { data, error }=await sb.from('cmd_tasks').select('*').order('created_at',{ascending:false});
-      if(error){ console.warn('loadTasks attempt',attempt,error.message); if(attempt===0){ await new Promise(r=>setTimeout(r,500)); continue; } toast('Erro ao carregar tarefas: '+error.message,'error'); return; }
+      if(error){ if(attempt===0){ await new Promise(r=>setTimeout(r,500)); continue; } toast('Erro ao carregar tarefas: '+error.message,'error'); return; }
       tasks=(data||[]).map(dbToTask);
       renderBoard(); renderCal(); renderPeople();
       checkNotifications();
       updateBadge();
       return;
-    } catch(e){ console.warn('loadTasks catch',attempt,e); if(attempt===0) await new Promise(r=>setTimeout(r,500)); }
+    } catch(e){ if(attempt===0) await new Promise(r=>setTimeout(r,500)); }
   }
   toast('Falha ao carregar tarefas. Verifique sua conexão.','error');
 }
@@ -807,7 +812,7 @@ async function sendBlobToWhisper(blob){
       headers:{ 'Authorization':'Bearer '+_currentSession.access_token },
       body:fd
     });
-    if(!res.ok){ console.warn('Whisper HTTP',res.status); return; }
+    if(!res.ok) return;
     const data=await res.json();
     if(data.text?.trim()){
       const ta=getTransText();
@@ -817,7 +822,7 @@ async function sendBlobToWhisper(blob){
       updateWordCount();
       transcriptLines=[{id:'full',time:'',text:ta.value}];
     }
-  } catch(e){ console.warn('Whisper error:',e); }
+  } catch(e){ /* Whisper falhou — silencioso, transcrição apenas não avança */ }
   finally {
     whisperProcessing=false;
     if(liveEl && isRecording) liveEl.textContent='Ouvindo...';
@@ -1068,7 +1073,6 @@ async function saveOOState(){
       console.error('saveOO HTTP',res.status,err);
       toast('Erro ao salvar: '+res.status,'error');
     } else {
-      console.log('saveOO OK:',PEOPLE.length,'people saved');
       toast('Salvo no Supabase');
     }
   } catch(e){ console.error('saveOO catch:',e); toast('Erro ao salvar','error'); }
@@ -1091,9 +1095,8 @@ function loadOOFromLocal(){
 async function loadOOFromSupabase(){
   for(let attempt=0; attempt<3; attempt++){
     try {
-      if(!_currentSession){ console.warn('loadOO: no session, attempt',attempt); await new Promise(r=>setTimeout(r,600)); continue; }
+      if(!_currentSession){ await new Promise(r=>setTimeout(r,600)); continue; }
       const { data,error }=await sb.from('cmd_user_settings').select('people,oo_data').maybeSingle();
-      console.log('loadOO attempt',attempt,': data=',data?'found ('+((data.people||[]).length)+' people)':'null','error=',error?.message||'none');
       if(error){ await new Promise(r=>setTimeout(r,600)); continue; }
       if(data){
         if(data.people && Array.isArray(data.people) && data.people.length) PEOPLE=data.people;
@@ -1101,7 +1104,7 @@ async function loadOOFromSupabase(){
         return true;
       }
       return false;
-    } catch(e){ console.warn('loadOO catch attempt',attempt,e); }
+    } catch(e){ /* retry */ }
     await new Promise(r=>setTimeout(r,600));
   }
   return false;
@@ -1494,7 +1497,7 @@ let reunSelected=null;
 
 async function loadAllMeetings(){
   const { data, error }=await sb.from('cmd_meetings').select('*').order('meeting_date',{ascending:false});
-  if(error){ console.warn('loadAllMeetings error:',error.message); return; }
+  if(error){ toast('Erro ao carregar reuniões','error'); return; }
   allMeetings=data||[];
 }
 
