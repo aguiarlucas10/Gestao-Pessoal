@@ -51,25 +51,38 @@ function formatDate(s){ if(!s) return '—'; const d=new Date(s+'T12:00:00'); re
 function isOverdue(s){ return s && new Date(s+'T23:59:59')<today && s!==isoToday; }
 function isToday(s){ return s===isoToday; }
 
-function toast(msg,type='success'){
+// Toast with optional action button (e.g. undo). action: {label, cb} or null.
+// Internal callers control markup; external/AI text always passes through esc() at call site.
+function toast(msg,type='success',action=null){
   const w=document.getElementById('toast-wrap');
   const t=document.createElement('div');
   t.className=`toast ${type}`;
   t.setAttribute('role','status');
   const icon=type==='success'?'✓':type==='error'?'⚠':'ℹ';
-  // msg may be a string (escape) or pre-built HTML from internal callers — internal callers
-  // already control the markup. External/AI text always passes through esc() at the call site.
-  t.innerHTML=`<span aria-hidden="true">${icon}</span> ${msg}`;
+  const ttl=action?5000:3000, fade=ttl-300;
+  let actionHtml='';
+  if(action){
+    actionHtml=`<button class="toast-action" type="button">${esc(action.label)}</button>`;
+  }
+  t.innerHTML=`<span aria-hidden="true">${icon}</span><span class="toast-msg">${msg}</span>${actionHtml}`;
+  if(action){
+    t.querySelector('.toast-action').addEventListener('click',()=>{
+      try{ action.cb() } finally { t.remove(); }
+    });
+  }
   w.appendChild(t);
-  setTimeout(()=>t.style.opacity='0',2700);
-  setTimeout(()=>t.remove(),3000);
+  setTimeout(()=>t.style.opacity='0',fade);
+  setTimeout(()=>t.remove(),ttl);
 }
 
 // Close topmost open modal on Escape (a11y: dialogs must be dismissable via keyboard)
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   // Dynamic modals first (most recently opened)
-  const dyn = document.getElementById('cal-day-popup')
+  const dyn = document.getElementById('del-meeting-modal')
+           || document.getElementById('paste-modal')
+           || document.getElementById('edit-ata-modal')
+           || document.getElementById('cal-day-popup')
            || document.getElementById('oo-person-modal')
            || document.getElementById('new-meeting-modal');
   if (dyn) { dyn.remove(); return; }
@@ -930,13 +943,33 @@ function clearTranscript(){
 }
 
 function pasteMode(){
-  const txt=prompt('Cole o texto da reunião:');
-  if(!txt) return;
-  showTransTextarea();
-  const ta=getTransText();
-  ta.value=txt;
-  transcriptLines=[{id:'full',time:'',text:txt}];
-  updateWordCount();
+  // Modal com textarea (substitui prompt nativo)
+  document.body.insertAdjacentHTML('beforeend',`
+    <div class="oo-modal-overlay" id="paste-modal" onclick="if(event.target===this)this.remove()">
+      <div class="oo-modal" onclick="event.stopPropagation()" style="width:560px;max-width:92vw" role="dialog" aria-modal="true" aria-labelledby="paste-modal-title">
+        <h3 id="paste-modal-title">Colar transcrição</h3>
+        <label for="paste-area" style="font-size:11px;color:var(--t3);font-family:var(--font-mono);letter-spacing:.05em;text-transform:uppercase">Texto da reunião</label>
+        <textarea id="paste-area" class="oo-note-area" style="min-height:240px;font-size:13px" placeholder="Cole aqui o texto…" autofocus></textarea>
+        <div class="oo-modal-btns">
+          <button class="btn-sm" type="button" onclick="document.getElementById('paste-modal').remove()">Cancelar</button>
+          <button class="btn-sm primary" type="button" id="paste-confirm">Importar</button>
+        </div>
+      </div>
+    </div>`);
+  const modal=document.getElementById('paste-modal');
+  const ta=modal.querySelector('#paste-area');
+  setTimeout(()=>ta.focus(),50);
+  modal.querySelector('#paste-confirm').addEventListener('click',()=>{
+    const txt=ta.value.trim();
+    if(!txt){ modal.remove(); return; }
+    modal.remove();
+    showTransTextarea();
+    const transTa=getTransText();
+    transTa.value=txt;
+    transcriptLines=[{id:'full',time:'',text:txt}];
+    updateWordCount();
+    toast('Transcrição importada');
+  });
 }
 
 async function generateAI(){
@@ -1249,7 +1282,7 @@ function selectOO(pid){
             <div style="flex:1"><div class="oo-action-text">${esc(t.title)}</div><div class="oo-action-meta"><span class="tag ${t.priority}">${t.priority.toUpperCase()}</span><span class="tag dt">${formatDate(t.dueDate)}</span></div></div>
             <div class="oo-item-actions">
               <button class="oo-item-btn" onclick="openPanel('${t.id}')" aria-label="Editar" title="Editar">✎</button>
-              <button class="oo-item-btn del" onclick="if(confirm('Excluir demanda?')){deleteTask('${t.id}');selectOO('${pid}')}" aria-label="Excluir" title="Excluir">✕</button>
+              <button class="oo-item-btn del" onclick="delOODemand('${t.id}','${pid}')" aria-label="Excluir demanda" title="Excluir">✕</button>
             </div>
             <button class="oo-action-chk ${t.done?'done':''}" aria-label="${t.done?'Marcar como não feito':'Marcar como concluído'}" onclick="toggleDone('${t.id}');selectOO('${pid}')"></button>
           </div>`).join('') || '<div style="font-size:12px;color:var(--t3);padding:6px 0">Nenhuma demanda em aberto.</div>'}
@@ -1311,14 +1344,147 @@ function renderOOActions(pid){
 function ooData(pid){ if(!oo11[pid]) oo11[pid]={topics:[],actions:[],notes:''}; return oo11[pid]; }
 
 function toggleOOAct(pid,i){ const d=ooData(pid); d.actions[i].done=!d.actions[i].done; saveOOState(); const el=document.getElementById(`oo-act-${pid}`); if(el){ el.innerHTML=`<div class="oo-section-head"><div class="oo-section-title">Action items</div></div>${renderOOActions(pid)}`; } renderOneOne(); }
-function addOOAction(pid){ const txt=prompt('Novo action item:'); if(!txt) return; const prio=prompt('Prioridade (alta/media/baixa):','media')||'media'; ooData(pid).actions.push({text:txt,done:false,prio}); saveOOState(); selectOO(pid); }
-function addOOTopic(pid){ const txt=prompt('Novo tópico de pauta:'); if(!txt) return; ooData(pid).topics.push(txt); saveOOState(); selectOO(pid); }
+// ── Inline add: render input row, focus, save on Enter ──
+function addOOTopic(pid){
+  const sec=document.querySelector(`#oo-main .oo-section`); // pauta section is the first
+  if(!sec) return;
+  if(sec.querySelector('.oo-inline-form')) return; // already open
+  const form=document.createElement('form');
+  form.className='oo-inline-form';
+  form.innerHTML=`<input type="text" class="oo-inline-input" placeholder="Novo tópico…" aria-label="Novo tópico de pauta" required>
+    <button type="submit" class="oo-inline-save" aria-label="Salvar">Adicionar</button>
+    <button type="button" class="oo-inline-cancel" aria-label="Cancelar">Cancelar</button>`;
+  sec.appendChild(form);
+  const input=form.querySelector('input');
+  input.focus();
+  form.addEventListener('submit',e=>{
+    e.preventDefault();
+    const txt=input.value.trim(); if(!txt) return;
+    ooData(pid).topics.push(txt); saveOOState(); selectOO(pid);
+  });
+  form.querySelector('.oo-inline-cancel').addEventListener('click',()=>form.remove());
+  input.addEventListener('keydown',e=>{ if(e.key==='Escape') form.remove(); });
+}
 
-// ── Edit / Delete topics & actions ──
-function editOOTopic(pid,i){ const d=ooData(pid); const txt=prompt('Editar tópico:',d.topics[i]); if(txt===null) return; d.topics[i]=txt; saveOOState(); selectOO(pid); }
-function delOOTopic(pid,i){ if(!confirm('Excluir este tópico?')) return; ooData(pid).topics.splice(i,1); saveOOState(); selectOO(pid); toast('Tópico excluído'); }
-function editOOAction(pid,i){ const a=ooData(pid).actions[i]; if(!a) return; const txt=prompt('Editar action item:',a.text); if(txt===null) return; a.text=txt; const prio=prompt('Prioridade (alta/media/baixa):',a.prio); if(prio) a.prio=prio; saveOOState(); selectOO(pid); }
-function delOOAction(pid,i){ if(!confirm('Excluir este action item?')) return; ooData(pid).actions.splice(i,1); saveOOState(); selectOO(pid); renderOneOne(); toast('Action item excluído'); }
+function addOOAction(pid){
+  const sec=document.getElementById(`oo-act-${pid}`);
+  if(!sec) return;
+  if(sec.querySelector('.oo-inline-form')) return;
+  const form=document.createElement('form');
+  form.className='oo-inline-form';
+  form.innerHTML=`<input type="text" class="oo-inline-input" placeholder="Novo action item…" aria-label="Texto do action item" required>
+    <div class="oo-inline-prio" role="group" aria-label="Prioridade">
+      <button type="button" data-prio="alta" class="oo-prio-btn alta" aria-pressed="false">Alta</button>
+      <button type="button" data-prio="media" class="oo-prio-btn media sel" aria-pressed="true">Média</button>
+      <button type="button" data-prio="baixa" class="oo-prio-btn baixa" aria-pressed="false">Baixa</button>
+    </div>
+    <button type="submit" class="oo-inline-save" aria-label="Salvar">Adicionar</button>
+    <button type="button" class="oo-inline-cancel" aria-label="Cancelar">Cancelar</button>`;
+  sec.appendChild(form);
+  const input=form.querySelector('input');
+  let prio='media';
+  form.querySelectorAll('.oo-prio-btn').forEach(b=>{
+    b.addEventListener('click',()=>{
+      prio=b.dataset.prio;
+      form.querySelectorAll('.oo-prio-btn').forEach(x=>{x.classList.remove('sel');x.setAttribute('aria-pressed','false')});
+      b.classList.add('sel'); b.setAttribute('aria-pressed','true');
+    });
+  });
+  input.focus();
+  form.addEventListener('submit',e=>{
+    e.preventDefault();
+    const txt=input.value.trim(); if(!txt) return;
+    ooData(pid).actions.push({text:txt,done:false,prio}); saveOOState(); selectOO(pid);
+  });
+  form.querySelector('.oo-inline-cancel').addEventListener('click',()=>form.remove());
+  input.addEventListener('keydown',e=>{ if(e.key==='Escape') form.remove(); });
+}
+
+// ── Inline edit via contentEditable (triggered by ✎ button) ──
+function editOOTopic(pid,i){
+  const sec=document.querySelector(`#oo-main .oo-section`);
+  if(!sec) return;
+  const topicEl=sec.querySelectorAll('.oo-topic-text')[i];
+  if(!topicEl) return;
+  topicEl.contentEditable='true';
+  topicEl.classList.add('editing');
+  topicEl.focus();
+  // select all
+  const range=document.createRange(); range.selectNodeContents(topicEl);
+  const selection=window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+  const finish=save=>{
+    topicEl.contentEditable='false'; topicEl.classList.remove('editing');
+    if(save){
+      const txt=topicEl.textContent.trim();
+      if(txt){ ooData(pid).topics[i]=txt; saveOOState(); }
+      else selectOO(pid); // re-render to restore original
+    } else selectOO(pid);
+  };
+  topicEl.addEventListener('blur',()=>finish(true),{once:true});
+  topicEl.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){ e.preventDefault(); topicEl.blur(); }
+    if(e.key==='Escape'){ e.preventDefault(); topicEl.removeEventListener('blur',finish); finish(false); }
+  });
+}
+
+function editOOAction(pid,i){
+  const sec=document.getElementById(`oo-act-${pid}`);
+  if(!sec) return;
+  const actionEl=sec.querySelectorAll('.oo-action-text')[i];
+  if(!actionEl) return;
+  actionEl.contentEditable='true';
+  actionEl.classList.add('editing');
+  actionEl.focus();
+  const range=document.createRange(); range.selectNodeContents(actionEl);
+  const selection=window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+  const a=ooData(pid).actions[i];
+  const finish=save=>{
+    actionEl.contentEditable='false'; actionEl.classList.remove('editing');
+    if(save){
+      const txt=actionEl.textContent.trim();
+      if(txt){ a.text=txt; saveOOState(); }
+      else selectOO(pid);
+    } else selectOO(pid);
+  };
+  actionEl.addEventListener('blur',()=>finish(true),{once:true});
+  actionEl.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){ e.preventDefault(); actionEl.blur(); }
+    if(e.key==='Escape'){ e.preventDefault(); actionEl.removeEventListener('blur',finish); finish(false); }
+  });
+}
+
+// Delete demanda (tarefa) na vista 1:1 — optimistic + undo via toast
+async function delOODemand(taskId, pid){
+  const t=tasks.find(x=>x.id===taskId); if(!t) return;
+  const idx=tasks.indexOf(t);
+  tasks.splice(idx,1);
+  selectOO(pid); renderBoard(); updateBadge();
+  toast('Demanda excluída','info',{label:'Desfazer',cb:async()=>{
+    tasks.splice(idx,0,t); selectOO(pid); renderBoard(); updateBadge();
+    await sbUpsert(t); // restaura no Supabase
+  }});
+  // Aguarda janela de undo (~5s) antes de propagar para Supabase
+  setTimeout(async()=>{
+    if(!tasks.find(x=>x.id===taskId)) await sbDelete(taskId);
+  },5000);
+}
+
+// ── Delete with undo (replaces native confirm) ──
+function delOOTopic(pid,i){
+  const removed=ooData(pid).topics.splice(i,1)[0];
+  saveOOState(); selectOO(pid);
+  toast('Tópico excluído','info',{label:'Desfazer',cb:()=>{
+    ooData(pid).topics.splice(i,0,removed); saveOOState(); selectOO(pid);
+  }});
+}
+
+function delOOAction(pid,i){
+  const removed=ooData(pid).actions.splice(i,1)[0];
+  saveOOState(); selectOO(pid); renderOneOne();
+  toast('Action item excluído','info',{label:'Desfazer',cb:()=>{
+    ooData(pid).actions.splice(i,0,removed); saveOOState(); selectOO(pid); renderOneOne();
+  }});
+}
 
 // ══════════════════════════════════════════════
 // REUNIÕES VIEW
@@ -1503,25 +1669,59 @@ async function saveMeetingNotes(id, notes){
 function editMeetingNotes(id){
   const m=allMeetings.find(x=>x.id===id);
   if(!m) return;
-  const newAta=prompt('Editar ata:', m.ata||'');
-  if(newAta===null) return;
-  m.ata=newAta;
-  sb.from('cmd_meetings').update({ata:newAta}).eq('id',id).then(({error})=>{
+  // Modal com textarea ampla (substitui prompt nativo)
+  document.body.insertAdjacentHTML('beforeend',`
+    <div class="oo-modal-overlay" id="edit-ata-modal" onclick="if(event.target===this)this.remove()">
+      <div class="oo-modal" onclick="event.stopPropagation()" style="width:640px;max-width:92vw" role="dialog" aria-modal="true" aria-labelledby="edit-ata-title">
+        <h3 id="edit-ata-title">Editar ata</h3>
+        <label for="edit-ata-area" style="font-size:11px;color:var(--t3);font-family:var(--font-mono);letter-spacing:.05em;text-transform:uppercase">${esc(m.title||'Reunião')}</label>
+        <textarea id="edit-ata-area" class="oo-note-area" style="min-height:320px;font-size:13px">${esc(m.ata||'')}</textarea>
+        <div class="oo-modal-btns">
+          <button class="btn-sm" type="button" onclick="document.getElementById('edit-ata-modal').remove()">Cancelar</button>
+          <button class="btn-sm primary" type="button" id="edit-ata-save">Salvar</button>
+        </div>
+      </div>
+    </div>`);
+  const modal=document.getElementById('edit-ata-modal');
+  const ta=modal.querySelector('#edit-ata-area');
+  setTimeout(()=>ta.focus(),50);
+  modal.querySelector('#edit-ata-save').addEventListener('click',async()=>{
+    const newAta=ta.value;
+    modal.remove();
+    m.ata=newAta;
+    const { error }=await sb.from('cmd_meetings').update({ata:newAta}).eq('id',id);
     if(error) toast('Erro ao salvar ata','error');
     else { selectMeeting(id); toast('Ata atualizada'); }
   });
 }
 
 async function deleteMeeting(id){
-  if(!confirm('Excluir esta reunião?')) return;
-  await sb.from('cmd_meeting_demands').delete().eq('meeting_id',id);
-  const { error }=await sb.from('cmd_meetings').delete().eq('id',id);
-  if(error){ toast('Erro ao excluir: '+error.message,'error'); return; }
-  allMeetings=allMeetings.filter(x=>x.id!==id);
-  reunSelected=null;
-  renderMeetingsList();
-  document.getElementById('reun-main').innerHTML='<div class="reun-empty"><div style="text-align:center"><svg width="32" height="32" viewBox="0 0 16 16" fill="none" style="margin-bottom:12px;opacity:.3" aria-hidden="true"><rect x="3" y="3" width="10" height="11.5" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="5.5" y="1.5" width="5" height="3" rx="0.5" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8.5h5M5.5 11h3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><div>Selecione ou crie uma reunião</div></div></div>';
-  toast('Reunião excluída');
+  const m=allMeetings.find(x=>x.id===id);
+  if(!m) return;
+  // Mini modal de confirmação (substitui native confirm)
+  document.body.insertAdjacentHTML('beforeend',`
+    <div class="oo-modal-overlay" id="del-meeting-modal" onclick="if(event.target===this)this.remove()">
+      <div class="oo-modal" onclick="event.stopPropagation()" style="width:380px" role="alertdialog" aria-modal="true" aria-labelledby="del-meeting-title" aria-describedby="del-meeting-msg">
+        <h3 id="del-meeting-title">Excluir reunião?</h3>
+        <p id="del-meeting-msg" style="font-size:13px;color:var(--t2);line-height:1.5">Você está prestes a excluir <strong>${esc(m.title||'esta reunião')}</strong> e todas as demandas vinculadas. Esta ação não pode ser desfeita.</p>
+        <div class="oo-modal-btns">
+          <button class="btn-sm" type="button" onclick="document.getElementById('del-meeting-modal').remove()" autofocus>Cancelar</button>
+          <button class="btn-sm" type="button" id="del-meeting-confirm" style="background:var(--rust);color:var(--acc-on);border:none">Excluir</button>
+        </div>
+      </div>
+    </div>`);
+  const modal=document.getElementById('del-meeting-modal');
+  modal.querySelector('#del-meeting-confirm').addEventListener('click',async()=>{
+    modal.remove();
+    await sb.from('cmd_meeting_demands').delete().eq('meeting_id',id);
+    const { error }=await sb.from('cmd_meetings').delete().eq('id',id);
+    if(error){ toast('Erro ao excluir: '+error.message,'error'); return; }
+    allMeetings=allMeetings.filter(x=>x.id!==id);
+    reunSelected=null;
+    renderMeetingsList();
+    document.getElementById('reun-main').innerHTML='<div class="reun-empty"><div style="text-align:center"><svg width="32" height="32" viewBox="0 0 16 16" fill="none" style="margin-bottom:12px;opacity:.3" aria-hidden="true"><rect x="3" y="3" width="10" height="11.5" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="5.5" y="1.5" width="5" height="3" rx="0.5" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8.5h5M5.5 11h3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><div>Selecione ou crie uma reunião</div></div></div>';
+    toast('Reunião excluída');
+  });
 }
 
 // ══════════════════════════════════════════════

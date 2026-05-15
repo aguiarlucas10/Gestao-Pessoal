@@ -384,6 +384,22 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 /* oo-action: identidade visual vem do border + hover, não da stripe lateral */
 .oo-action:hover{border-color:var(--b2)}
 .oo-action-text{font-size:12px;color:var(--t1);flex:1}
+/* Inline edit affordance (contentEditable) */
+.oo-topic-text.editing,.oo-action-text.editing{outline:none;background:var(--bg);border:1px solid var(--acc-rg);border-radius:6px;padding:4px 8px;margin:-4px -8px;box-shadow:0 0 0 3px var(--acc-bg)}
+/* Inline add form (replaces prompt) */
+.oo-inline-form{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:var(--s1);border:1px solid var(--acc-rg);border-radius:9px;padding:8px 10px;margin-top:2px;animation:fadeIn .15s ease both}
+.oo-inline-input{flex:1;min-width:180px;background:var(--bg);border:1px solid var(--b1);border-radius:6px;padding:7px 10px;font-size:13px;color:var(--t1);font-family:var(--font-body);outline:none;transition:border-color .15s}
+.oo-inline-input:focus{border-color:var(--acc-rg);box-shadow:0 0 0 3px var(--acc-bg)}
+.oo-inline-prio{display:flex;gap:3px}
+.oo-prio-btn{font-size:10px;font-weight:600;padding:5px 9px;border-radius:5px;border:1px solid var(--b1);background:transparent;color:var(--t3);cursor:pointer;font-family:var(--font-body);transition:all .15s}
+.oo-prio-btn.alta.sel{background:var(--rust-bg);color:var(--rust);border-color:var(--rust)}
+.oo-prio-btn.media.sel{background:var(--bronze-bg);color:var(--bronze);border-color:var(--bronze)}
+.oo-prio-btn.baixa.sel{background:var(--moss-bg);color:var(--moss);border-color:var(--moss)}
+.oo-inline-save,.oo-inline-cancel{font-size:11px;font-weight:600;padding:6px 12px;border-radius:6px;font-family:var(--font-body);cursor:pointer;transition:all .15s}
+.oo-inline-save{background:var(--acc);color:var(--acc-on);border:none}
+.oo-inline-save:hover{background:var(--acc-hi)}
+.oo-inline-cancel{background:transparent;color:var(--t3);border:1px solid var(--b1)}
+.oo-inline-cancel:hover{background:var(--s2);color:var(--t1)}
 .oo-action-meta{display:flex;gap:6px;align-items:center;margin-top:4px}
 .oo-action-chk{width:14px;height:14px;border:1.5px solid var(--b2);border-radius:3px;flex-shrink:0;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;margin-top:1px}
 .oo-action-chk.done{background:var(--grn);border-color:var(--grn)}
@@ -532,7 +548,10 @@ select.modal-input{cursor:pointer}
 
 /* ── TOAST ── */
 .toast-wrap{position:fixed;bottom:24px;right:24px;z-index:500;display:flex;flex-direction:column;gap:8px;pointer-events:none}
-.toast{background:var(--s2);border:1px solid var(--b2);border-radius:10px;padding:10px 16px;font-size:12px;color:var(--t1);display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-2);animation:fadeUp .2s ease both;max-width:320px}
+.toast{background:var(--s2);border:1px solid var(--b2);border-radius:10px;padding:10px 16px;font-size:12px;color:var(--t1);display:flex;align-items:center;gap:8px;box-shadow:var(--shadow-2);animation:fadeUp .2s ease both;max-width:360px;pointer-events:auto;transition:opacity .3s}
+.toast .toast-msg{flex:1}
+.toast .toast-action{font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--acc);background:transparent;border:1px solid var(--acc-rg);border-radius:6px;padding:4px 10px;cursor:pointer;flex-shrink:0;transition:all .15s}
+.toast .toast-action:hover{background:var(--acc-bg);border-color:var(--acc)}
 .toast.success{border-color:var(--moss)}
 .toast.error{border-color:var(--rust)}
 .toast.info{border-color:var(--acc-rg)}
