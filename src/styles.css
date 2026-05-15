@@ -242,7 +242,7 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 .card-foot{display:flex;align-items:center;justify-content:space-between}
 .card-person{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--t2)}
 .av{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:7.5px;font-weight:700;flex-shrink:0}
-.card-check{width:15px;height:15px;border:1.5px solid var(--b2);border-radius:4px;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.card-check{width:18px;height:18px;border:1.5px solid var(--b2);border-radius:4px;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .card-check:hover{border-color:var(--acc)}
 .card-check.done{background:var(--grn);border-color:var(--grn)}
 .col-add{display:flex;align-items:center;gap:6px;padding:7px 9px;border-radius:0;font-size:11px;color:var(--t4);cursor:pointer;transition:all .15s;border:none;border-bottom:1px solid var(--b1);flex-shrink:0}
@@ -340,7 +340,7 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 .demand-item:hover{border-color:var(--b2)}
 .demand-text{font-size:12px;color:var(--t1);flex:1;line-height:1.4}
 .demand-meta{display:flex;align-items:center;gap:6px;margin-top:5px}
-.demand-check{width:14px;height:14px;border:1.5px solid var(--b2);border-radius:4px;flex-shrink:0;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.demand-check{width:18px;height:18px;border:1.5px solid var(--b2);border-radius:4px;flex-shrink:0;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;margin-top:1px}
 .demand-check.checked{background:var(--acc);border-color:var(--acc)}
 .trans-actions{padding:12px 16px;border-top:1px solid var(--b1);display:flex;gap:8px;flex-shrink:0}
 .btn-sm{flex:1;padding:8px;border-radius:8px;border:1px solid var(--b1);background:transparent;color:var(--t2);font-size:11px;font-weight:600;font-family:var(--font-body);cursor:pointer;transition:all .15s;text-align:center}
@@ -401,7 +401,7 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 .oo-inline-cancel{background:transparent;color:var(--t3);border:1px solid var(--b1)}
 .oo-inline-cancel:hover{background:var(--s2);color:var(--t1)}
 .oo-action-meta{display:flex;gap:6px;align-items:center;margin-top:4px}
-.oo-action-chk{width:14px;height:14px;border:1.5px solid var(--b2);border-radius:3px;flex-shrink:0;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.oo-action-chk{width:18px;height:18px;border:1.5px solid var(--b2);border-radius:3px;flex-shrink:0;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;margin-top:1px}
 .oo-action-chk.done{background:var(--grn);border-color:var(--grn)}
 .oo-note-area{background:var(--s2);border:1px solid var(--b1);border-radius:9px;padding:12px 14px;font-size:12.5px;color:var(--t2);font-family:var(--font-body);resize:none;outline:none;min-height:100px;line-height:1.7;width:100%;transition:border-color .15s}
 .oo-note-area:focus{border-color:var(--acc-rg);color:var(--t1)}
@@ -447,14 +447,14 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 
 /* ── 1:1 manage ── */
 .oo-manage-bar{display:flex;gap:6px}
-.oo-manage-btn{font-size:11px;color:var(--t3);cursor:pointer;padding:3px 7px;border-radius:5px;border:1px solid var(--b1);background:transparent;font-family:var(--font-body);transition:all .15s}
+.oo-manage-btn{font-size:11px;color:var(--t3);cursor:pointer;padding:5px 9px;min-width:28px;min-height:28px;border-radius:5px;border:1px solid var(--b1);background:transparent;font-family:var(--font-body);transition:all .15s;display:inline-flex;align-items:center;justify-content:center}
 .oo-manage-btn:hover{background:var(--s2);color:var(--t1)}
 .oo-person.hidden-person{opacity:.4}
 .oo-person.dragging{opacity:.35;border:1px dashed var(--acc)}
 .oo-person.drag-over{border-top:2px solid var(--acc)}
 .oo-item-actions{display:flex;gap:4px;opacity:0;transition:opacity .15s;flex-shrink:0}
 .oo-person:hover .oo-item-actions,.oo-topic:hover .oo-item-actions,.oo-action:hover .oo-item-actions{opacity:1}
-.oo-item-btn{background:none;border:none;color:var(--t3);cursor:pointer;padding:2px 4px;font-size:11px;border-radius:4px;transition:all .15s}
+.oo-item-btn{background:none;border:none;color:var(--t3);cursor:pointer;padding:5px 7px;min-width:26px;min-height:26px;font-size:11px;border-radius:4px;transition:all .15s;display:inline-flex;align-items:center;justify-content:center}
 .oo-item-btn:hover{color:var(--t1);background:var(--s3)}
 .oo-item-btn.del:hover{color:var(--red)}
 .oo-modal-overlay{position:fixed;inset:0;background:var(--overlay-medium);display:flex;align-items:center;justify-content:center;z-index:1000}
@@ -474,7 +474,7 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 .side-panel{width:420px;max-width:92vw;max-height:85vh;border-radius:14px;display:flex;flex-direction:column;background:var(--s1);border:1px solid var(--b1);box-shadow:var(--shadow-3)}
 .sp-head{padding:16px 18px;border-bottom:1px solid var(--b1);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .sp-title{font-size:13px;font-weight:600;color:var(--t2)}
-.sp-close{width:26px;height:26px;border-radius:6px;border:1px solid var(--b1);background:transparent;color:var(--t2);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.sp-close{width:30px;height:30px;border-radius:6px;border:1px solid var(--b1);background:transparent;color:var(--t2);cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0}
 .sp-close:hover{background:var(--s2);color:var(--t1)}
 .sp-body{flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:14px}
 .sp-body::-webkit-scrollbar{width:3px}
@@ -598,13 +598,33 @@ select.modal-input{cursor:pointer}
   /* People view horizontal scroll */
   .people-board{gap:12px}
   .people-col{min-width:260px}
-  /* Calendar month: smaller cells */
-  .cal-day{min-height:60px;padding:3px}
+  /* Calendar month: cells slightly compact mas tap-friendly */
+  .cal-cell{min-height:72px;padding:4px}
+  .cal-task-pill{font-size:9.5px;padding:1.5px 5px}
+  .cal-dow{padding:6px 4px;font-size:9px}
+  /* Task modal: stack rows for narrow screens */
+  .modal-row{flex-direction:column;gap:14px}
 }
 @media(max-width:480px){
   .board-toolbar{flex-wrap:wrap;gap:6px}
-  .fchip{font-size:10px;padding:4px 8px}
+  .fchip{font-size:10px;padding:4px 10px}
   .topbar{padding:10px 12px 10px 48px}
   .col{min-width:220px}
   .oo-person{min-width:150px}
+  .board-search{width:100%;order:99}
+  .cal-cell{min-height:64px}
+}
+
+/* ── TOUCH DEVICES: expand small targets to ≥40px ── */
+@media (pointer: coarse){
+  .card-check,.demand-check,.oo-action-chk{width:24px;height:24px}
+  .oo-item-btn{min-width:40px;min-height:40px;padding:8px 10px}
+  .oo-manage-btn{min-width:40px;min-height:40px;padding:8px 12px}
+  .sp-close{width:40px;height:40px}
+  .cal-nav-btn{width:40px;height:40px}
+  .oo-color-opt{width:32px;height:32px}
+  .fchip{padding:8px 14px;font-size:12px}
+  .pbtn,.tbtn,.asbtn{min-height:36px}
+  /* Hide hover-revealed actions on touch (no hover state to trigger them) */
+  .oo-item-actions{opacity:1 !important}
 }
