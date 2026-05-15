@@ -152,6 +152,31 @@ Free Google Fonts only. Distantes do trio saturado (Linear/Vercel/Stripe).
 | Status dot err | `--rust` | — | — | |
 | Focus ring | — | — | `2px solid --acc` `outline-offset: 2px` | Global :focus-visible |
 
+## Component Patterns
+
+### Inline edit / add (substitui prompt nativo)
+
+Padrão em todas as listas de itens curtos (tópicos 1:1, action items):
+
+- **Add**: clique no botão "+ X" injeta um `<form class="oo-inline-form">` no fim da seção. Input com foco automático, `Enter` salva, `Esc` cancela. Para itens com prioridade, chips inline (Alta/Média/Baixa) com `aria-pressed`.
+- **Edit**: clique em ✎ no item → o elemento de texto vira `contentEditable="true"` com classe `.editing` (ring oxblood). `Enter` ou blur salva, `Esc` reverte.
+- **Delete**: clique em ✕ → remoção optimistic imediata + `toast(..., 'info', {label:'Desfazer', cb})` com 5s para reverter. Sem `confirm()` nativo.
+
+### Toast com action button
+
+`toast(msg, type='success', action=null)` — `action: {label, cb}`. Toast com ação tem 5s de TTL (vs 3s do toast simples), renderiza botão mono uppercase oxblood. Padrão usado para undo de delete.
+
+### Modal customizado vs alertdialog
+
+- **Modal informativo/edit** (`role="dialog"`): paste-modal, edit-ata-modal, new-meeting-modal, oo-person-modal. Foco em primeiro input, ESC fecha, Enter/click confirma.
+- **Alertdialog destrutivo** (`role="alertdialog"`): del-meeting-modal apenas. Botão Cancelar é o default focus (autofocus), botão Excluir destacado em rust. Usado apenas para ações irreversíveis em backend.
+
+### Touch targets
+
+Hierarquia de tamanho mínimo:
+- **Desktop**: 18px visual para checkboxes leves, 26px+ para icon buttons, 30px+ para close/nav buttons (passa WCAG 2.5.8 AA com 24px de área efetiva)
+- **Touch (`@media (pointer:coarse)`)**: tudo cresce para 40×40px+ (WCAG 2.5.5 AAA), inclui revelar `.oo-item-actions` sempre (sem hover em touch)
+
 ## Anti-patterns (proibidos neste projeto)
 
 Do audit + design laws. Match-and-refuse:
@@ -160,10 +185,11 @@ Do audit + design laws. Match-and-refuse:
 - **Gradient text** (background-clip:text).
 - **Glassmorphism decorativo** (backdrop-filter:blur como adorno). Aceito apenas como dimmer funcional em modal overlay, e desligado em mobile (Fase 7).
 - **`#fff` ou `#000` puros**. Use `--bg` / `--t1` ou tinted alternative.
-- **`<div onclick>`** no lugar de `<button>`.
-- **Emoji-as-icon** em UI (nav, section titles, buttons). Aceito apenas em contexto editorial (briefing matinal).
-- **`prompt()` / `confirm()` nativos** para input/decisão.
-- **Modal-as-first-thought** para criação rápida. Inline first.
+- **`<div onclick>`** no lugar de `<button>`. Containers com nested buttons usam `<div role="button" tabindex="0" onkeydown="kbd(event)">`.
+- **Emoji-as-icon** em UI (nav, section titles, buttons). SVG Lucide-style stroke 1.5 currentColor. Emojis aceitos apenas em contexto editorial (briefing matinal, body de notificações).
+- **`prompt()` / `confirm()` nativos** para input/decisão. Sempre inline form ou modal customizado.
+- **Modal-as-first-thought** para criação rápida. Inline first (forms se desdobram dentro da seção).
+- **Animação em layout properties** (width/height/margin). Use transform/opacity. Cards não animam a cada render — só entry verdadeiro.
 
 ## Anchors
 
@@ -171,6 +197,25 @@ Referências de craft (não de visual a copiar): NYT executive section, FT print
 
 **Não-anchors** (lane saturado, evitar copiar): Linear, Vercel, Cursor, Stripe Dashboard, Notion, qualquer "AI tool" 2024-25.
 
+## Polish pendente (P3, não bloqueante)
+
+- **Inline `style="..."`** (~50 ocorrências em index.html + app.js): extrair para utility classes (`.stack`, `.row`, `.grow`, `.muted`, `.center`). Funcional, só dívida de manutenção.
+- **Empty states / onboard**: 1:1 e Reuniões ganharam cópia melhor na Fase 5, mas falta primeira-vez (zero pessoas cadastradas, zero reuniões) com ação direta.
+- **Avatares legados**: usuários cadastrados antes da Fase 2 mantêm hex neon antigo no Supabase. Migração one-shot pode harmonizar.
+- **Calendário mobile**: month-grid funciona mas list-agenda seria mais ergonômica em portrait < 480px.
+- **Light/dark dual theme**: light é committed, dark companion fica como decisão futura se uso noturno ganhar peso.
+
 ## Histórico
 
-- **2026-05-14** — Identidade inicial. Audit anterior em 8/20. Fase 1 do plano de correções (`/impeccable shape identity`) escolhida: **Officio**.
+- **2026-05-14** — Identidade Officio escolhida. Audit anterior em 8/20.
+- **2026-05-14/15** — Plano de correções executado em 8 fases:
+  - **Fase 0** split de arquivos (single-file → index.html + styles.css + app.js)
+  - **Fase 1** identidade (este DESIGN.md)
+  - **Fase 2** aplicação dos tokens OKLCH + Fraunces/Instrument Sans
+  - **Fase 3** a11y semântica (esc, ARIA, focus-visible, `<button>`, `<label for>`, `role="group"`)
+  - **Fase 4** distill: removidas side-stripes 3px e 90% dos emoji-icons
+  - **Fase 5** clarify: eliminados todos os `prompt()`/`confirm()` nativos
+  - **Fase 6** adapt: touch targets WCAG AA + media coarse para AAA
+  - **Fase 7** optimize: debounce search, sem fadeIn churn, blur off no mobile
+  - **Fase 8** polish: este documento + extras P3 anotados acima
+- **Score estimado pós-fases**: ~17/20 (Good → quase Excellent). Re-rodar `/impeccable audit` confirma.
