@@ -431,6 +431,11 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 .reun-card-info{flex:1;min-width:0}
 .reun-card-title{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .reun-card-sub{font-size:11px;color:var(--t3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reun-card-edit{flex-shrink:0;display:flex;align-items:center;justify-content:center;width:30px;height:30px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--t3);cursor:pointer;opacity:0;transition:opacity .15s,background .15s,color .15s,border-color .15s}
+.reun-card:hover .reun-card-edit,.reun-card:focus-within .reun-card-edit{opacity:1}
+.reun-card-edit:hover{background:var(--bg);border-color:var(--b1);color:var(--t1)}
+.reun-card-edit:focus-visible{opacity:1;outline:2px solid var(--acc-rg);outline-offset:1px}
+@media (pointer:coarse){.reun-card-edit{opacity:1;width:40px;height:40px}}
 .reun-main{flex:1;display:flex;flex-direction:column;overflow:hidden}
 .reun-head{padding:16px 24px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:12px;flex-shrink:0;background:var(--s1)}
 .reun-head-title{font-family:var(--font-display);font-size:20px;flex:1}

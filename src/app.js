@@ -86,6 +86,7 @@ document.addEventListener('keydown', e => {
   // Dynamic modals first (most recently opened)
   const dyn = document.getElementById('del-meeting-modal')
            || document.getElementById('paste-modal')
+           || document.getElementById('edit-title-modal')
            || document.getElementById('edit-ata-modal')
            || document.getElementById('cal-day-popup')
            || document.getElementById('oo-person-modal')
@@ -1521,10 +1522,11 @@ function renderMeetingsList(){
     const mon=d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','');
     const pArr=Array.isArray(m.participants)?m.participants:typeof m.participants==='string'?m.participants.split(',').map(s=>s.trim()).filter(Boolean):[];
     const parts=pArr.join(', ')||'Sem participantes';
-    return `<button class="reun-card ${reunSelected===m.id?'active':''}" aria-pressed="${reunSelected===m.id}" onclick="selectMeeting('${m.id}')">
+    return `<div class="reun-card ${reunSelected===m.id?'active':''}" role="button" tabindex="0" aria-pressed="${reunSelected===m.id}" onclick="selectMeeting('${m.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectMeeting('${m.id}')}">
       <div class="reun-card-date"><div class="reun-card-day">${day}</div><div class="reun-card-mon">${mon}</div></div>
       <div class="reun-card-info"><div class="reun-card-title">${esc(m.title||'Reunião')}</div><div class="reun-card-sub">${esc(parts)}</div></div>
-    </button>`;
+      <button class="reun-card-edit" type="button" aria-label="Editar nome da reunião" title="Editar nome" onclick="event.stopPropagation();editMeetingTitle('${m.id}')"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M11.5 2.5l2 2L6 12l-2.5.5L4 10l7.5-7.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button>
+    </div>`;
   }).join('');
 }
 
@@ -1675,10 +1677,10 @@ function editMeetingNotes(id){
   // Modal com textarea ampla (substitui prompt nativo)
   document.body.insertAdjacentHTML('beforeend',`
     <div class="oo-modal-overlay" id="edit-ata-modal" onclick="if(event.target===this)this.remove()">
-      <div class="oo-modal" onclick="event.stopPropagation()" style="width:640px;max-width:92vw" role="dialog" aria-modal="true" aria-labelledby="edit-ata-title">
+      <div class="oo-modal" onclick="event.stopPropagation()" style="width:1100px;max-width:94vw;height:90vh;max-height:90vh" role="dialog" aria-modal="true" aria-labelledby="edit-ata-title">
         <h3 id="edit-ata-title">Editar ata</h3>
         <label for="edit-ata-area" style="font-size:11px;color:var(--t3);font-family:var(--font-mono);letter-spacing:.05em;text-transform:uppercase">${esc(m.title||'Reunião')}</label>
-        <textarea id="edit-ata-area" class="oo-note-area" style="min-height:320px;font-size:13px">${esc(m.ata||'')}</textarea>
+        <textarea id="edit-ata-area" class="oo-note-area" style="flex:1;min-height:0;font-size:13px">${esc(m.ata||'')}</textarea>
         <div class="oo-modal-btns">
           <button class="btn-sm" type="button" onclick="document.getElementById('edit-ata-modal').remove()">Cancelar</button>
           <button class="btn-sm primary" type="button" id="edit-ata-save">Salvar</button>
@@ -1696,6 +1698,40 @@ function editMeetingNotes(id){
     if(error) toast('Erro ao salvar ata','error');
     else { selectMeeting(id); toast('Ata atualizada'); }
   });
+}
+
+function editMeetingTitle(id){
+  const m=allMeetings.find(x=>x.id===id);
+  if(!m) return;
+  // Modal de edição do nome (substitui prompt nativo)
+  document.body.insertAdjacentHTML('beforeend',`
+    <div class="oo-modal-overlay" id="edit-title-modal" onclick="if(event.target===this)this.remove()">
+      <div class="oo-modal" onclick="event.stopPropagation()" style="width:420px" role="dialog" aria-modal="true" aria-labelledby="edit-title-modal-title">
+        <h3 id="edit-title-modal-title">Editar nome</h3>
+        <div><label for="edit-title-input">Título da reunião</label><input id="edit-title-input" value="${esc(m.title||'')}" placeholder="Ex: Alinhamento semanal"></div>
+        <div class="oo-modal-btns">
+          <button class="btn-sm" type="button" onclick="document.getElementById('edit-title-modal').remove()">Cancelar</button>
+          <button class="btn-sm primary" type="button" id="edit-title-save">Salvar</button>
+        </div>
+      </div>
+    </div>`);
+  const modal=document.getElementById('edit-title-modal');
+  const input=modal.querySelector('#edit-title-input');
+  setTimeout(()=>{ input.focus(); input.select(); },50);
+  const save=async()=>{
+    const newTitle=input.value.trim();
+    if(!newTitle){ toast('Preencha o título','error'); return; }
+    if(newTitle===m.title){ modal.remove(); return; }
+    modal.remove();
+    m.title=newTitle;
+    renderMeetingsList();
+    const { error }=await sb.from('cmd_meetings').update({title:newTitle}).eq('id',id);
+    if(error){ toast('Erro ao salvar nome','error'); return; }
+    if(reunSelected===id) selectMeeting(id);
+    toast('Nome atualizado');
+  };
+  modal.querySelector('#edit-title-save').addEventListener('click',save);
+  input.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); save(); } });
 }
 
 async function deleteMeeting(id){
