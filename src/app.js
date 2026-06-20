@@ -433,7 +433,12 @@ function renderBoard(){
   wrap.innerHTML='';
   updateBadge();
   COL_CONFIG.forEach(cc=>{
-    const open=tasks.filter(t=>!t.done && getCol(t.dueDate)===cc.id && filterTask(t));
+    const open=tasks.filter(t=>!t.done && getCol(t.dueDate)===cc.id && filterTask(t)).sort((a,b)=>{
+      const da=a.dueDate||'9999-99-99', db=b.dueDate||'9999-99-99';
+      if(da!==db) return da<db?-1:1;
+      const pw={alta:3,media:2,baixa:1};
+      return (pw[b.priority]||0)-(pw[a.priority]||0);
+    });
     const done=tasks.filter(t=>t.done && getCol(t.dueDate)===cc.id);
     const col=document.createElement('div');
     col.className='col';
