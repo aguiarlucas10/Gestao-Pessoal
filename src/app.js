@@ -1625,7 +1625,7 @@ async function selectMeeting(id){
         <div class="oo-section-head">
           <div class="oo-section-title">Anotações</div>
         </div>
-        <textarea class="oo-note-area" placeholder="Anotações livres sobre esta reunião..." onblur="saveMeetingNotes('${m.id}',this.value)">${esc(m.notes||'')}</textarea>
+        <textarea class="oo-note-area" style="min-height:400px" placeholder="Anotações livres sobre esta reunião..." onblur="saveMeetingNotes('${m.id}',this.value)">${esc(m.notes||'')}</textarea>
       </div>
     </div>`;
 }
