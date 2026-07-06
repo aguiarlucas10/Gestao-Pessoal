@@ -448,6 +448,21 @@ button{font:inherit;color:inherit;background:transparent;border:none;padding:0;m
 .reun-participant{display:flex;align-items:center;gap:6px;background:var(--s2);border:1px solid var(--b1);border-radius:20px;padding:4px 10px 4px 4px;font-size:12px}
 .reun-participant-av{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--acc-on)}
 .reun-ata{background:var(--s2);border:1px solid var(--b1);border-radius:9px;padding:14px 16px;font-size:12.5px;color:var(--t2);line-height:1.7;white-space:pre-line}
+/* ── Editor de texto rico (ata) ── */
+.rte-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:6px;border:1px solid var(--b1);border-radius:9px;background:var(--s1)}
+.rte-btn{min-width:30px;height:30px;padding:0 8px;display:inline-flex;align-items:center;justify-content:center;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--t2);font-size:14px;line-height:1;font-family:var(--font-body);cursor:pointer;transition:background .12s,color .12s,border-color .12s}
+.rte-btn:hover{background:var(--s2);color:var(--t1)}
+.rte-btn.on{background:var(--acc2);color:var(--acc);border-color:var(--acc-rg)}
+.rte-sep{width:1px;height:20px;background:var(--b1);margin:0 4px;flex-shrink:0}
+.rte-color{width:20px;height:20px;padding:0;border-radius:50%;border:2px solid var(--s1);box-shadow:0 0 0 1px var(--b2);cursor:pointer;background:var(--sw);transition:transform .12s}
+.rte-color:hover{transform:scale(1.15)}
+.rte-color:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.rte-editor{overflow-y:auto;white-space:normal}
+.rte-editor:focus{outline:none;border-color:var(--acc-rg);color:var(--t1)}
+.rte-editor:empty:before{content:attr(data-ph);color:var(--t4)}
+.rte-status{font-size:11px;color:var(--t4);font-family:var(--font-mono);letter-spacing:.03em;white-space:nowrap}
+.rte-status.ok{color:var(--moss)}
+.rte-status.err{color:var(--rust)}
 .reun-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--t3);font-size:13px}
 
 /* ── 1:1 manage ── */

@@ -1603,7 +1603,7 @@ async function selectMeeting(id){
 
       <div class="oo-section">
         <div class="oo-section-head"><div class="oo-section-title">Ata</div></div>
-        <div class="reun-ata">${esc(m.ata||'Sem ata disponível.')}</div>
+        <div class="reun-ata" style="white-space:normal">${ataToHTML(m.ata)||'Sem ata disponível.'}</div>
       </div>
 
       <div class="oo-section">
@@ -1676,33 +1676,120 @@ async function saveMeetingNotes(id, notes){
   if(m) m.notes=notes;
 }
 
+// ── Helpers da ata (texto rico armazenado como HTML) ──
+function ataIsHTML(raw){ return /<(div|br|b|i|u|font|span|strong|em|p)[\s/>]/i.test(raw||''); }
+function ataToHTML(raw){
+  if(!raw) return '';
+  if(ataIsHTML(raw)) return raw;              // já é HTML (formato novo)
+  return esc(raw).replace(/\n/g,'<br>');      // legado em texto puro → preserva quebras
+}
+function sanitizeAtaHTML(html){
+  const tmp=document.createElement('div');
+  tmp.innerHTML=html;
+  tmp.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach(n=>n.remove());
+  tmp.querySelectorAll('*').forEach(el=>{
+    [...el.attributes].forEach(a=>{
+      const n=a.name.toLowerCase();
+      if(n.startsWith('on')) el.removeAttribute(a.name);
+      else if((n==='href'||n==='src')&&/^\s*javascript:/i.test(a.value)) el.removeAttribute(a.name);
+    });
+  });
+  return tmp.innerHTML;
+}
+function loadAtaIntoEditor(editor, raw){
+  editor.innerHTML=ataToHTML(raw);
+  editor.style.lineHeight='1.7';
+  if(editor.children.length===1){
+    const only=editor.firstElementChild;
+    const st=(only.getAttribute('style')||'').replace(/\s+/g,'');
+    const mm=st.match(/^line-height:([\d.]+);?$/i);
+    if(only.tagName==='DIV'&&mm){ editor.style.lineHeight=mm[1]; editor.innerHTML=only.innerHTML; }
+  }
+}
+function serializeAta(editor){
+  const inner=sanitizeAtaHTML(editor.innerHTML).trim();
+  if(!inner||inner==='<br>'||inner==='<div><br></div>') return '';
+  const lh=editor.style.lineHeight||'1.7';
+  return `<div style="line-height:${lh}">${inner}</div>`;
+}
+
 function editMeetingNotes(id){
   const m=allMeetings.find(x=>x.id===id);
   if(!m) return;
-  // Modal com textarea ampla (substitui prompt nativo)
+  const COLORS=[['Padrão','#2b2622'],['Oxblood','#7a1f24'],['Vermelho','#b23a26'],['Âmbar','#b8791f'],['Verde','#4d6b34'],['Teal','#2f6b6b'],['Plum','#6a3a58']];
+  const swatches=COLORS.map(([n,c])=>`<button type="button" class="rte-color" data-color="${c}" style="--sw:${c}" title="${n}" aria-label="Cor: ${n}"></button>`).join('');
+  // Editor de ata com formatação rica + auto-save (substitui prompt nativo)
   document.body.insertAdjacentHTML('beforeend',`
-    <div class="oo-modal-overlay" id="edit-ata-modal" onclick="if(event.target===this)this.remove()">
-      <div class="oo-modal" onclick="event.stopPropagation()" style="width:1100px;max-width:94vw;height:90vh;max-height:90vh" role="dialog" aria-modal="true" aria-labelledby="edit-ata-title">
-        <h3 id="edit-ata-title">Editar ata</h3>
-        <label for="edit-ata-area" style="font-size:11px;color:var(--t3);font-family:var(--font-mono);letter-spacing:.05em;text-transform:uppercase">${esc(m.title||'Reunião')}</label>
-        <textarea id="edit-ata-area" class="oo-note-area" style="flex:1;min-height:0;font-size:13px">${esc(m.ata||'')}</textarea>
+    <div class="oo-modal-overlay" id="edit-ata-modal">
+      <div class="oo-modal" style="width:1100px;max-width:94vw;height:90vh;max-height:90vh" role="dialog" aria-modal="true" aria-labelledby="edit-ata-title">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+          <h3 id="edit-ata-title">Editar ata</h3>
+          <span id="edit-ata-status" class="rte-status ok" aria-live="polite">Salvo</span>
+        </div>
+        <label style="font-size:11px;color:var(--t3);font-family:var(--font-mono);letter-spacing:.05em;text-transform:uppercase">${esc(m.title||'Reunião')}</label>
+        <div class="rte-toolbar" role="toolbar" aria-label="Formatação">
+          <button type="button" class="rte-btn" data-cmd="bold" title="Negrito (Ctrl+B)"><b>B</b></button>
+          <button type="button" class="rte-btn" data-cmd="italic" title="Itálico (Ctrl+I)"><i>I</i></button>
+          <button type="button" class="rte-btn" data-cmd="underline" title="Sublinhado (Ctrl+U)"><span style="text-decoration:underline">U</span></button>
+          <span class="rte-sep"></span>
+          ${swatches}
+          <span class="rte-sep"></span>
+          <button type="button" class="rte-btn rte-space" data-space="1.3" title="Espaçamento compacto">≡</button>
+          <button type="button" class="rte-btn rte-space" data-space="1.7" title="Espaçamento normal">☰</button>
+          <button type="button" class="rte-btn rte-space" data-space="2.3" title="Espaçamento amplo">≣</button>
+          <span class="rte-sep"></span>
+          <button type="button" class="rte-btn" data-cmd="removeFormat" title="Limpar formatação">A̶</button>
+        </div>
+        <div id="edit-ata-area" class="oo-note-area rte-editor" contenteditable="true" data-ph="Escreva a ata da reunião…" style="flex:1;min-height:0;font-size:13px"></div>
         <div class="oo-modal-btns">
-          <button class="btn-sm" type="button" onclick="document.getElementById('edit-ata-modal').remove()">Cancelar</button>
-          <button class="btn-sm primary" type="button" id="edit-ata-save">Salvar</button>
+          <button class="btn-sm primary" type="button" id="edit-ata-close">Concluído</button>
         </div>
       </div>
     </div>`);
   const modal=document.getElementById('edit-ata-modal');
-  const ta=modal.querySelector('#edit-ata-area');
-  setTimeout(()=>ta.focus(),50);
-  modal.querySelector('#edit-ata-save').addEventListener('click',async()=>{
-    const newAta=ta.value;
-    modal.remove();
-    m.ata=newAta;
-    const { error }=await sb.from('cmd_meetings').update({ata:newAta}).eq('id',id);
-    if(error) toast('Erro ao salvar ata','error');
-    else { selectMeeting(id); toast('Ata atualizada'); }
+  const editor=modal.querySelector('#edit-ata-area');
+  const statusEl=modal.querySelector('#edit-ata-status');
+  try{ document.execCommand('styleWithCSS',false,true); }catch(_){}
+  loadAtaIntoEditor(editor, m.ata);
+  const markSpace=()=>{ const lh=editor.style.lineHeight||'1.7'; modal.querySelectorAll('.rte-space').forEach(b=>b.classList.toggle('on', b.dataset.space===lh)); };
+  markSpace();
+
+  let saveTimer=null;
+  const doSave=async()=>{
+    clearTimeout(saveTimer); saveTimer=null;
+    const html=serializeAta(editor);
+    if(html===(m.ata||'')){ statusEl.textContent='Salvo'; statusEl.className='rte-status ok'; return; }
+    statusEl.textContent='Salvando…'; statusEl.className='rte-status';
+    m.ata=html;
+    const { error }=await sb.from('cmd_meetings').update({ata:html}).eq('id',id);
+    if(error){ statusEl.textContent='Erro ao salvar'; statusEl.className='rte-status err'; }
+    else { statusEl.textContent='Salvo ✓'; statusEl.className='rte-status ok'; }
+  };
+  const scheduleSave=()=>{ statusEl.textContent='Editando…'; statusEl.className='rte-status'; clearTimeout(saveTimer); saveTimer=setTimeout(doSave,700); };
+  const updateBtnStates=()=>{ ['bold','italic','underline'].forEach(c=>{ let on=false; try{ on=document.queryCommandState(c); }catch(_){} const b=modal.querySelector(`.rte-btn[data-cmd="${c}"]`); if(b) b.classList.toggle('on',on); }); };
+
+  modal.querySelectorAll('.rte-btn[data-cmd]').forEach(b=>{
+    b.addEventListener('mousedown',e=>e.preventDefault());
+    b.addEventListener('click',()=>{ document.execCommand(b.dataset.cmd,false,null); editor.focus(); updateBtnStates(); scheduleSave(); });
   });
+  modal.querySelectorAll('.rte-color').forEach(b=>{
+    b.addEventListener('mousedown',e=>e.preventDefault());
+    b.addEventListener('click',()=>{ document.execCommand('foreColor',false,b.dataset.color); editor.focus(); scheduleSave(); });
+  });
+  modal.querySelectorAll('.rte-space').forEach(b=>{
+    b.addEventListener('mousedown',e=>e.preventDefault());
+    b.addEventListener('click',()=>{ editor.style.lineHeight=b.dataset.space; markSpace(); editor.focus(); scheduleSave(); });
+  });
+
+  editor.addEventListener('input',scheduleSave);
+  editor.addEventListener('keyup',updateBtnStates);
+  editor.addEventListener('mouseup',updateBtnStates);
+  setTimeout(()=>editor.focus(),50);
+
+  const close=async()=>{ await doSave(); modal.remove(); selectMeeting(id); };
+  modal.querySelector('#edit-ata-close').addEventListener('click',close);
+  modal.addEventListener('click',e=>{ if(e.target===modal) close(); });
+  modal.addEventListener('keydown',e=>{ if(e.key==='Escape'){ e.stopPropagation(); e.preventDefault(); close(); } });
 }
 
 function editMeetingTitle(id){
