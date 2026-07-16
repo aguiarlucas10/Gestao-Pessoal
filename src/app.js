@@ -21,6 +21,7 @@ const isoToday = isoDate(today);
 
 let tasks = [];
 let boardFilter='all', searchQ='', peopleFilter='all', peopleQ='';
+let peopleSort = (typeof localStorage!=='undefined' && localStorage.getItem('tasks_people_sort')) || 'prazo';
 let calView='month', calDate=new Date(today.getFullYear(),today.getMonth(),1);
 let mPrio='media', mTipo='delegada';
 let ooSelected=null;
@@ -33,6 +34,11 @@ let transcriptLines=[], aiDemands=[];
 
 // 1:1 local state (populated from Supabase on login)
 let oo11={};
+
+// WhatsApp monitor state
+let waNumbers=[], waDaily=[];
+let waTariffs={ utility:0.0315, marketing:0.1761, authentication:0.0315, service:0 };
+let waPeriod='30d', waCategoryFilter='all', waNumberFilter='all';
 
 // ══════════════════════════════════════════════
 // UTILS
@@ -94,6 +100,8 @@ document.addEventListener('keydown', e => {
   if (dyn) { dyn.remove(); return; }
   if (document.getElementById('detail-overlay')?.classList.contains('open')) { closePanel(); return; }
   if (document.getElementById('task-modal')?.classList.contains('open')) { closeModal('task-modal'); return; }
+  if (document.getElementById('wa-numbers-modal')?.classList.contains('open')) { closeModal('wa-numbers-modal'); return; }
+  if (document.getElementById('wa-tariffs-modal')?.classList.contains('open')) { closeModal('wa-tariffs-modal'); return; }
   if (document.getElementById('briefing-overlay')?.classList.contains('open')) { closeBriefing(); return; }
   if (document.getElementById('notif-panel')?.classList.contains('open')) { toggleNotifPanel(); return; }
 });
@@ -141,6 +149,7 @@ sb.auth.onAuthStateChange((event, session)=>{
       setTimeout(async()=>{
         await loadOOState();
         await loadTasks();
+        await loadWA();
         scheduleNotifCheck();
         showBriefing();
       },0);
@@ -370,7 +379,7 @@ document.addEventListener('click', e=>{
 // ══════════════════════════════════════════════
 // NAV
 // ══════════════════════════════════════════════
-const NAV_TITLES={ board:'Tarefas', calendar:'Calendário', people:'Por Pessoa', transcription:'Transcrição', '11':'1:1s com o Time', reunioes:'Reuniões' };
+const NAV_TITLES={ board:'Tarefas', calendar:'Calendário', people:'Por Pessoa', transcription:'Transcrição', '11':'1:1s com o Time', reunioes:'Reuniões', whatsapp:'WhatsApp · Disparos Oficiais' };
 
 function switchNav(view, el){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
@@ -383,6 +392,7 @@ function switchNav(view, el){
   if(view==='people') renderPeople();
   if(view==='11') renderOneOne();
   if(view==='reunioes') renderMeetingsList();
+  if(view==='whatsapp') renderWhatsApp();
   // Close mobile nav
   if(window.innerWidth<=768){ document.getElementById('main-nav').classList.remove('open'); document.getElementById('nav-overlay').classList.remove('open'); }
 }
@@ -571,11 +581,50 @@ async function deleteTask(id){
 // ══════════════════════════════════════════════
 function setFilter(f,el){ boardFilter=f; document.querySelectorAll('#view-board .fchip').forEach(c=>c.classList.remove('on')); el.classList.add('on'); renderBoard(); }
 function setPeopleFilter(f,el){ peopleFilter=f; document.querySelectorAll('#view-people .fchip').forEach(c=>c.classList.remove('on')); el.classList.add('on'); renderPeople(); }
+function setPeopleSort(s,el){
+  peopleSort=s;
+  try{ localStorage.setItem('tasks_people_sort', s); }catch(_){}
+  document.querySelectorAll('#view-people .seg-btn').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+  renderPeople();
+}
 
 // ══════════════════════════════════════════════
 // PEOPLE VIEW
 // ══════════════════════════════════════════════
 let peopleDragIdx=null;
+const PRI_W={alta:3,media:2,baixa:1};
+function sortByDateThenPri(a,b){
+  const da=a.dueDate||'9999-99-99', db=b.dueDate||'9999-99-99';
+  if(da!==db) return da<db?-1:1;
+  return (PRI_W[b.priority]||0)-(PRI_W[a.priority]||0);
+}
+function sortByPriThenDate(a,b){
+  const pri=(PRI_W[b.priority]||0)-(PRI_W[a.priority]||0);
+  if(pri!==0) return pri;
+  const da=a.dueDate||'9999-99-99', db=b.dueDate||'9999-99-99';
+  return da<db?-1:(da>db?1:0);
+}
+function groupPersonTasks(pt){
+  const sevenOut=isoDate(addDays(today,7));
+  const g={atrasadas:[],hoje:[],semana:[],breve:[]};
+  for(const t of pt){
+    const d=t.dueDate;
+    if(isOverdue(d)) g.atrasadas.push(t);
+    else if(isToday(d)) g.hoje.push(t);
+    else if(d && d<=sevenOut) g.semana.push(t);
+    else g.breve.push(t);
+  }
+  g.atrasadas.sort(sortByDateThenPri);
+  g.hoje.sort((a,b)=>(PRI_W[b.priority]||0)-(PRI_W[a.priority]||0));
+  g.semana.sort(sortByDateThenPri);
+  g.breve.sort(sortByDateThenPri);
+  return g;
+}
+function personGroupHTML(label,kind,items){
+  if(!items.length) return '';
+  return `<div class="group-sep ${kind}"><span class="lbl">${label}</span><span class="ct">${items.length}</span></div>`+items.map(t=>personCardHTML(t)).join('');
+}
 function renderPeople(){
   const wrap=document.getElementById('people-board'); wrap.innerHTML='';
   PEOPLE.forEach((p,idx)=>{
@@ -584,7 +633,16 @@ function renderPeople(){
     if(peopleFilter==='media') pt=pt.filter(t=>t.priority==='media');
     if(peopleFilter==='baixa') pt=pt.filter(t=>t.priority==='baixa');
     if(peopleQ) pt=pt.filter(t=>t.title.toLowerCase().includes(peopleQ.toLowerCase()));
-    pt.sort((a,b)=>(a.dueDate||'9999')>(b.dueDate||'9999')?1:-1);
+    let bodyHTML='';
+    if(peopleSort==='prioridade'){
+      bodyHTML=[...pt].sort(sortByPriThenDate).map(t=>personCardHTML(t)).join('');
+    } else {
+      const g=groupPersonTasks(pt);
+      bodyHTML+=personGroupHTML('Atrasadas','atrasadas',g.atrasadas);
+      bodyHTML+=personGroupHTML('Hoje','hoje',g.hoje);
+      bodyHTML+=personGroupHTML('Esta semana','semana',g.semana);
+      bodyHTML+=personGroupHTML('Em breve','breve',g.breve);
+    }
     const done=tasks.filter(t=>t.person===p.id&&t.done);
     const col=document.createElement('div'); col.className='person-col';
     col.draggable=true;
@@ -611,7 +669,7 @@ function renderPeople(){
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Adicionar
       </button>
       <div class="person-col-body">
-        ${pt.map(t=>personCardHTML(t)).join('')}
+        ${bodyHTML || `<div class="col-empty">Nada por aqui ainda.</div>`}
         ${done.length?`<div class="done-sep">✓ Concluídas (${done.length})</div>${done.slice(0,2).map(cardDoneHTML).join('')}`:''}
       </div>`;
     wrap.appendChild(col);
@@ -1856,12 +1914,540 @@ async function deleteMeeting(id){
 }
 
 // ══════════════════════════════════════════════
+// WHATSAPP — monitor de disparos via API Oficial
+// ══════════════════════════════════════════════
+
+const WA_CAT_LABEL = { utility:'Utility', marketing:'Marketing', authentication:'Authentication', service:'Service' };
+
+async function loadWA(){
+  if(!_currentSession) return;
+  const uid = _currentSession.user.id;
+
+  // Seed tarifas default na primeira vez (idempotente do lado do banco).
+  try { await sb.rpc('seed_wa_tariffs', { p_owner: uid }); } catch(e){ console.warn('seed_wa_tariffs', e); }
+
+  const since = isoDate(addDays(today, -90));
+  const [numsRes, tarRes, dailyRes] = await Promise.all([
+    sb.from('cmd_wa_numbers').select('*').order('created_at',{ascending:true}),
+    sb.from('cmd_wa_tariffs').select('category, price_brl'),
+    sb.from('cmd_wa_daily').select('wa_number_id, occurred_date, category, conversation_count').gte('occurred_date', since),
+  ]);
+
+  if(numsRes.error){ toast('Erro ao carregar números WA: '+numsRes.error.message,'error'); return; }
+  if(tarRes.error){ toast('Erro ao carregar tarifas WA: '+tarRes.error.message,'error'); return; }
+  if(dailyRes.error){ toast('Erro ao carregar disparos WA: '+dailyRes.error.message,'error'); return; }
+
+  waNumbers = numsRes.data || [];
+  waDaily   = dailyRes.data || [];
+  if(tarRes.data){
+    for(const r of tarRes.data) waTariffs[r.category] = Number(r.price_brl);
+  }
+  refreshWANumberSelect();
+}
+
+function refreshWANumberSelect(){
+  const sel = document.getElementById('wa-num-select');
+  if(!sel) return;
+  const current = sel.value || 'all';
+  sel.innerHTML = `<option value="all">Todos os números</option>` +
+    waNumbers.map(n=>`<option value="${esc(n.id)}">${esc(n.label||n.display_phone_number)} · ${esc(n.display_phone_number)}</option>`).join('');
+  // Preserva seleção se ainda existir
+  if([...sel.options].some(o=>o.value===current)) sel.value = current;
+  else waNumberFilter = 'all';
+}
+
+// ─── Period helpers ───────────────────────────
+function waPeriodRange(){
+  // Retorna {start, end} como strings ISO (inclusive ambos).
+  const t = new Date(today);
+  if(waPeriod==='7d')  return { start: isoDate(addDays(t,-6)),  end: isoDate(t) };
+  if(waPeriod==='30d') return { start: isoDate(addDays(t,-29)), end: isoDate(t) };
+  if(waPeriod==='this'){
+    const s = new Date(t.getFullYear(), t.getMonth(), 1);
+    return { start: isoDate(s), end: isoDate(t) };
+  }
+  if(waPeriod==='prev'){
+    const s = new Date(t.getFullYear(), t.getMonth()-1, 1);
+    const e = new Date(t.getFullYear(), t.getMonth(), 0);
+    return { start: isoDate(s), end: isoDate(e) };
+  }
+  return { start: isoDate(addDays(t,-29)), end: isoDate(t) };
+}
+
+function waDateList(start, end){
+  // Itera entre start e end inclusivos como YYYY-MM-DD strings.
+  const out = [];
+  let d = new Date(start+'T12:00:00');
+  const last = new Date(end+'T12:00:00');
+  while(d <= last){ out.push(isoDate(d)); d.setDate(d.getDate()+1); }
+  return out;
+}
+
+function getWAFilteredRows(){
+  const { start, end } = waPeriodRange();
+  return waDaily.filter(r =>
+    r.occurred_date >= start && r.occurred_date <= end &&
+    (waCategoryFilter==='all' || (waCategoryFilter==='utility' ? (r.category==='utility'||r.category==='authentication') : r.category===waCategoryFilter)) &&
+    (waNumberFilter==='all' || r.wa_number_id===waNumberFilter)
+  );
+}
+
+// Agrupa categorias internamente: utility e authentication contam juntas (barra bronze).
+function bucketCategory(cat){ return (cat==='utility' || cat==='authentication') ? 'utility' : cat; }
+
+function aggregateByDayCategory(rows, dates){
+  // Retorna mapa: date → { utility:count, marketing:count }
+  const map = {};
+  for(const d of dates) map[d] = { utility:0, marketing:0 };
+  for(const r of rows){
+    if(!map[r.occurred_date]) continue;
+    const b = bucketCategory(r.category);
+    if(b!=='utility' && b!=='marketing') continue;
+    map[r.occurred_date][b] += r.conversation_count;
+  }
+  return map;
+}
+
+function aggregateByNumber(rows, date, bucket){
+  // Retorna [{wa_number_id, count, raw:[{category,count}]}] para tooltip.
+  const map = new Map();
+  for(const r of rows){
+    if(r.occurred_date !== date) continue;
+    if(bucketCategory(r.category) !== bucket) continue;
+    const cur = map.get(r.wa_number_id) || { count:0, byCat:{} };
+    cur.count += r.conversation_count;
+    cur.byCat[r.category] = (cur.byCat[r.category]||0) + r.conversation_count;
+    map.set(r.wa_number_id, cur);
+  }
+  return [...map.entries()].map(([id,v])=>({wa_number_id:id, ...v}));
+}
+
+function costForRow(category, count){
+  return (waTariffs[category] || 0) * count;
+}
+
+function brl(v){
+  return v.toLocaleString('pt-BR', { style:'currency', currency:'BRL', minimumFractionDigits:2, maximumFractionDigits:2 });
+}
+
+// ─── Render orquestra ─────────────────────────
+function renderWhatsApp(){
+  refreshWANumberSelect();
+  const rows = getWAFilteredRows();
+  renderWAKpis(rows);
+  renderWAChart(rows);
+}
+
+function renderWAKpis(rows){
+  let total=0, util=0, mkt=0, cost=0;
+  for(const r of rows){
+    total += r.conversation_count;
+    const b = bucketCategory(r.category);
+    if(b==='utility')   util += r.conversation_count;
+    if(b==='marketing') mkt  += r.conversation_count;
+    cost += costForRow(r.category, r.conversation_count);
+  }
+  const fmt = n => n.toLocaleString('pt-BR');
+  document.getElementById('wa-kpi-total').textContent = fmt(total);
+  document.getElementById('wa-kpi-util').textContent  = fmt(util);
+  document.getElementById('wa-kpi-mkt').textContent   = fmt(mkt);
+  document.getElementById('wa-kpi-cost').textContent  = brl(cost);
+
+  const utilCost = rows.filter(r=>bucketCategory(r.category)==='utility').reduce((s,r)=>s+costForRow(r.category,r.conversation_count),0);
+  const mktCost  = rows.filter(r=>r.category==='marketing').reduce((s,r)=>s+costForRow(r.category,r.conversation_count),0);
+  document.getElementById('wa-kpi-util-sub').textContent = brl(utilCost);
+  document.getElementById('wa-kpi-mkt-sub').textContent  = brl(mktCost);
+  const { start, end } = waPeriodRange();
+  document.getElementById('wa-kpi-total-sub').textContent = `${formatDate(start)} – ${formatDate(end)}`;
+}
+
+function renderWAChart(rows){
+  const wrap = document.getElementById('wa-chart');
+  if(!wrap) return;
+  const { start, end } = waPeriodRange();
+  const dates = waDateList(start, end);
+
+  if(waNumbers.length===0){
+    wrap.innerHTML = `<div class="wa-empty">Nenhum número WhatsApp cadastrado.<br><br>Use <strong>Gerenciar números</strong> para cadastrar o primeiro — o webhook só registra conversations de números registrados aqui.</div>`;
+    return;
+  }
+  if(rows.length===0){
+    wrap.innerHTML = `<div class="wa-empty">Nenhuma conversation registrada no período.<br><br>Confirme que o webhook está configurado no Meta Developer Console e que houve disparos billable nesta janela.</div>`;
+    return;
+  }
+
+  const agg = aggregateByDayCategory(rows, dates);
+  const showUtil = waCategoryFilter==='all' || waCategoryFilter==='utility';
+  const showMkt  = waCategoryFilter==='all' || waCategoryFilter==='marketing';
+
+  // Escala Y
+  let maxY = 0;
+  for(const d of dates){
+    if(showUtil) maxY = Math.max(maxY, agg[d].utility);
+    if(showMkt)  maxY = Math.max(maxY, agg[d].marketing);
+  }
+  if(maxY === 0) maxY = 1;
+  // Arredonda para cima até um "nice number"
+  const niceTop = niceCeil(maxY);
+
+  // Layout SVG
+  const W = 1000, H = 260;
+  const padL = 48, padR = 16, padT = 12, padB = dates.length>14 ? 56 : 32;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const slotW = plotW / dates.length;
+  const groupedShown = (showUtil && showMkt) ? 2 : 1;
+  const gap = Math.max(1, slotW * 0.12);
+  const barW = Math.max(2, (slotW - gap*3) / groupedShown);
+
+  // Grid Y (4 linhas)
+  const yTicks = 4;
+  let grid = '';
+  for(let i=0; i<=yTicks; i++){
+    const v = Math.round(niceTop * (i/yTicks));
+    const y = padT + plotH - (v/niceTop)*plotH;
+    grid += `<line class="wa-axis-grid" x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}"/>`;
+    grid += `<text class="wa-axis-label" x="${padL-8}" y="${y+3}" text-anchor="end">${v.toLocaleString('pt-BR')}</text>`;
+  }
+
+  // Bars + labels X
+  const rotated = dates.length > 14;
+  let bars = '', xlabels = '';
+  dates.forEach((d, i) => {
+    const x0 = padL + i*slotW + gap;
+    let bx = x0;
+    if(showUtil){
+      const v = agg[d].utility;
+      const h = (v/niceTop) * plotH;
+      const y = padT + plotH - h;
+      bars += `<rect class="wa-bar-utility" x="${bx.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" data-date="${d}" data-bucket="utility"/>`;
+      bx += barW + gap;
+    }
+    if(showMkt){
+      const v = agg[d].marketing;
+      const h = (v/niceTop) * plotH;
+      const y = padT + plotH - h;
+      bars += `<rect class="wa-bar-marketing" x="${bx.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" data-date="${d}" data-bucket="marketing"/>`;
+    }
+    // X label
+    const lblX = padL + i*slotW + slotW/2;
+    const showEvery = dates.length > 30 ? 5 : dates.length > 14 ? 2 : 1;
+    if(i % showEvery === 0){
+      const dd = new Date(d+'T12:00:00');
+      const lbl = dd.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+      if(rotated){
+        xlabels += `<text class="wa-axis-label" x="${lblX}" y="${padT+plotH+18}" text-anchor="end" transform="rotate(-45 ${lblX} ${padT+plotH+18})">${lbl}</text>`;
+      } else {
+        xlabels += `<text class="wa-axis-label" x="${lblX}" y="${padT+plotH+18}" text-anchor="middle">${lbl}</text>`;
+      }
+    }
+  });
+
+  wrap.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${grid}${bars}${xlabels}</svg>`;
+
+  // Listeners para tooltip
+  wrap.querySelectorAll('rect[data-date]').forEach(r => {
+    r.addEventListener('mouseenter', e => showWATooltip(e, r.dataset.date, r.dataset.bucket));
+    r.addEventListener('mouseleave', hideWATooltip);
+    r.addEventListener('click', e => showWATooltip(e, r.dataset.date, r.dataset.bucket, true));
+  });
+}
+
+// Arredondamento "nice" para o topo do eixo Y
+function niceCeil(v){
+  if(v <= 10) return Math.max(5, Math.ceil(v));
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  const norm = v / pow;
+  let nice;
+  if(norm <= 1)      nice = 1;
+  else if(norm <= 2) nice = 2;
+  else if(norm <= 5) nice = 5;
+  else               nice = 10;
+  return nice * pow;
+}
+
+let _waTooltipPinned = false;
+function showWATooltip(evt, date, bucket, pin=false){
+  const tip = document.getElementById('wa-tooltip');
+  if(!tip) return;
+  if(pin) _waTooltipPinned = !_waTooltipPinned;
+  if(!pin && _waTooltipPinned) return;
+
+  const rows = getWAFilteredRows();
+  const byNumber = aggregateByNumber(rows, date, bucket);
+  // Ordena por count desc
+  byNumber.sort((a,b)=>b.count-a.count);
+
+  const dd = new Date(date+'T12:00:00');
+  const dateLbl = dd.toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'});
+  const bucketLbl = bucket==='utility' ? 'Utility (inclui auth)' : 'Marketing';
+  const dotCls = bucket==='utility' ? 'wa-dot-util' : 'wa-dot-mkt';
+
+  let total = 0;
+  let body = '';
+  if(byNumber.length === 0){
+    body = `<div style="font-size:12px;color:var(--t3);padding:4px 0">Sem conversations neste dia.</div>`;
+  } else {
+    for(const item of byNumber){
+      const num = waNumbers.find(n=>n.id===item.wa_number_id);
+      const label = num ? (num.label || num.display_phone_number) : 'Número removido';
+      const phone = num ? num.display_phone_number : '—';
+      let lineCost = 0;
+      const tariffNote = [];
+      for(const [cat, cnt] of Object.entries(item.byCat)){
+        const c = (waTariffs[cat]||0) * cnt;
+        lineCost += c;
+        tariffNote.push(`${cnt} × R$ ${(waTariffs[cat]||0).toFixed(4)}${cat==='authentication'?' (auth)':''}`);
+      }
+      total += lineCost;
+      body += `<div class="wa-tooltip-row">
+        <div class="wa-tooltip-num">${esc(label)}<small>${esc(phone)} · ${tariffNote.join(' + ')}</small></div>
+        <div class="wa-tooltip-val"><strong>${brl(lineCost)}</strong>${item.count} conv.</div>
+      </div>`;
+    }
+  }
+
+  tip.innerHTML = `
+    <div class="wa-tooltip-head"><span class="wa-dot ${dotCls}"></span>${bucketLbl} · ${dateLbl}</div>
+    ${body}
+    ${byNumber.length ? `<div class="wa-tooltip-total"><span>Total</span><span>${brl(total)}</span></div>` : ''}
+  `;
+
+  // Posicionamento: relativo ao wa-chart-card (container do tooltip)
+  const card = tip.parentElement;
+  const cardRect = card.getBoundingClientRect();
+  const barRect = evt.currentTarget.getBoundingClientRect();
+  // Mostrar primeiro para medir
+  tip.classList.add('on');
+  const tipW = tip.offsetWidth, tipH = tip.offsetHeight;
+  let x = barRect.left + barRect.width/2 - cardRect.left - tipW/2;
+  let y = barRect.top - cardRect.top - tipH - 8;
+  // Clamp horizontal dentro do card
+  x = Math.max(8, Math.min(x, cardRect.width - tipW - 8));
+  // Se não cabe acima, mostra abaixo
+  if(y < 8){ y = barRect.bottom - cardRect.top + 8; }
+  tip.style.left = `${x}px`;
+  tip.style.top  = `${y}px`;
+  tip.setAttribute('aria-hidden','false');
+}
+
+function hideWATooltip(){
+  if(_waTooltipPinned) return;
+  const tip = document.getElementById('wa-tooltip');
+  if(!tip) return;
+  tip.classList.remove('on');
+  tip.setAttribute('aria-hidden','true');
+}
+
+// Fechar tooltip pinned ao clicar fora
+document.addEventListener('click', e => {
+  if(!_waTooltipPinned) return;
+  if(e.target.closest('#wa-tooltip')) return;
+  if(e.target.closest('rect[data-date]')) return;
+  _waTooltipPinned = false;
+  hideWATooltip();
+});
+
+// ─── Toolbar handlers ─────────────────────────
+function setWAPeriod(p, el){
+  waPeriod = p;
+  document.querySelectorAll('#view-whatsapp .seg-btn').forEach(b=>b.classList.toggle('on', b===el));
+  renderWhatsApp();
+}
+function setWACategory(c, el){
+  waCategoryFilter = c;
+  document.querySelectorAll('#view-whatsapp .fchip').forEach(b=>b.classList.remove('on'));
+  el.classList.add('on');
+  renderWhatsApp();
+}
+function setWANumber(id){
+  waNumberFilter = id;
+  renderWhatsApp();
+}
+
+// ─── CRUD números ─────────────────────────────
+function openWANumbersModal(){
+  renderWANumbersModal();
+  openModal('wa-numbers-modal');
+  setTimeout(()=>document.getElementById('wa-num-display')?.focus(), 50);
+}
+
+function renderWANumbersModal(){
+  const wrap = document.getElementById('wa-numbers-list');
+  if(!wrap) return;
+  if(waNumbers.length===0){
+    wrap.innerHTML = `<div class="wa-empty-numbers">Nenhum número cadastrado.<br>Adicione abaixo o display number e o Phone Number ID que aparecem no Meta Developer Console.</div>`;
+    return;
+  }
+  wrap.innerHTML = waNumbers.map(n=>`
+    <div class="wa-num-row ${n.active?'':'inactive'}">
+      <div class="wa-num-info">
+        <div class="wa-num-label-row">
+          <span class="wa-num-label">${esc(n.label || 'Sem apelido')}</span>
+          ${n.active?'':'<span class="tag" style="background:var(--s3);color:var(--t3);font-size:9px;padding:2px 6px;border-radius:4px">INATIVO</span>'}
+        </div>
+        <div class="wa-num-display">${esc(n.display_phone_number)}</div>
+        <div class="wa-num-pid">ID Meta: ${esc(n.phone_number_id)}</div>
+      </div>
+      <div class="wa-num-actions">
+        <button onclick="editWANumber('${n.id}')">Editar</button>
+        <button onclick="toggleWANumberActive('${n.id}')">${n.active?'Desativar':'Ativar'}</button>
+        <button class="danger" onclick="deleteWANumber('${n.id}')">Excluir</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function addWANumber(){
+  if(!_currentSession){ toast('Sessão expirada','error'); return; }
+  const display = document.getElementById('wa-num-display').value.trim();
+  const pid     = document.getElementById('wa-num-pid').value.trim();
+  const label   = document.getElementById('wa-num-label').value.trim();
+  const country = (document.getElementById('wa-num-country').value.trim() || 'BR').toUpperCase().slice(0,2);
+  if(!display || !pid){ toast('Preencha display number e Phone Number ID','error'); return; }
+  const { error } = await sb.from('cmd_wa_numbers').insert({
+    owner_id: _currentSession.user.id,
+    display_phone_number: display,
+    phone_number_id: pid,
+    label: label,
+    country_code: country,
+    active: true,
+  });
+  if(error){
+    toast('Erro ao adicionar: ' + error.message, 'error');
+    return;
+  }
+  document.getElementById('wa-num-display').value = '';
+  document.getElementById('wa-num-pid').value = '';
+  document.getElementById('wa-num-label').value = '';
+  document.getElementById('wa-num-country').value = 'BR';
+  await loadWA();
+  renderWANumbersModal();
+  if(currentView==='whatsapp') renderWhatsApp();
+  toast('Número adicionado','success');
+}
+
+async function editWANumber(id){
+  const n = waNumbers.find(x=>x.id===id);
+  if(!n) return;
+  // Inline edit simples: prompt seria anti-pattern → reusa o form de baixo
+  document.getElementById('wa-num-display').value = n.display_phone_number;
+  document.getElementById('wa-num-pid').value = n.phone_number_id;
+  document.getElementById('wa-num-label').value = n.label || '';
+  document.getElementById('wa-num-country').value = n.country_code || 'BR';
+  // Troca o botão "Adicionar" por "Salvar" temporariamente
+  const btn = document.querySelector('#wa-numbers-modal .wa-numbers-add .btn-primary');
+  if(!btn) return;
+  btn.textContent = 'Salvar alterações';
+  btn.setAttribute('data-editing', id);
+  btn.onclick = ()=>saveWANumberEdit(id);
+  document.getElementById('wa-num-display').focus();
+}
+
+async function saveWANumberEdit(id){
+  if(!_currentSession){ toast('Sessão expirada','error'); return; }
+  const display = document.getElementById('wa-num-display').value.trim();
+  const pid     = document.getElementById('wa-num-pid').value.trim();
+  const label   = document.getElementById('wa-num-label').value.trim();
+  const country = (document.getElementById('wa-num-country').value.trim() || 'BR').toUpperCase().slice(0,2);
+  if(!display || !pid){ toast('Preencha display number e Phone Number ID','error'); return; }
+  const { error } = await sb.from('cmd_wa_numbers').update({
+    display_phone_number: display, phone_number_id: pid, label, country_code: country
+  }).eq('id', id);
+  if(error){ toast('Erro: '+error.message,'error'); return; }
+  // Restaura o botão
+  const btn = document.querySelector('#wa-numbers-modal .wa-numbers-add .btn-primary');
+  if(btn){ btn.textContent='Adicionar número'; btn.removeAttribute('data-editing'); btn.onclick = addWANumber; }
+  document.getElementById('wa-num-display').value = '';
+  document.getElementById('wa-num-pid').value = '';
+  document.getElementById('wa-num-label').value = '';
+  document.getElementById('wa-num-country').value = 'BR';
+  await loadWA();
+  renderWANumbersModal();
+  if(currentView==='whatsapp') renderWhatsApp();
+  toast('Número atualizado','success');
+}
+
+async function toggleWANumberActive(id){
+  const n = waNumbers.find(x=>x.id===id);
+  if(!n) return;
+  const { error } = await sb.from('cmd_wa_numbers').update({ active: !n.active }).eq('id', id);
+  if(error){ toast('Erro: '+error.message,'error'); return; }
+  n.active = !n.active;
+  renderWANumbersModal();
+  if(currentView==='whatsapp') renderWhatsApp();
+}
+
+async function deleteWANumber(id){
+  // Remoção optimistic com toast undo (padrão do projeto, sem confirm() nativo)
+  const idx = waNumbers.findIndex(x=>x.id===id);
+  if(idx<0) return;
+  const removed = waNumbers[idx];
+  waNumbers.splice(idx,1);
+  renderWANumbersModal();
+  if(currentView==='whatsapp') renderWhatsApp();
+  toast(`Número "${removed.label||removed.display_phone_number}" será excluído`, 'info', {
+    label:'Desfazer',
+    cb: ()=>{
+      waNumbers.splice(idx,0,removed);
+      renderWANumbersModal();
+      if(currentView==='whatsapp') renderWhatsApp();
+    }
+  });
+  // Aguarda 5s (TTL do toast com action) antes de confirmar exclusão no banco
+  setTimeout(async ()=>{
+    if(waNumbers.find(x=>x.id===id)) return; // usuário desfez
+    const { error } = await sb.from('cmd_wa_numbers').delete().eq('id', id);
+    if(error){
+      toast('Erro ao excluir: '+error.message,'error');
+      waNumbers.splice(idx,0,removed);
+      renderWANumbersModal();
+      if(currentView==='whatsapp') renderWhatsApp();
+    }
+  }, 5200);
+}
+
+// ─── Tarifas ──────────────────────────────────
+function openWATariffsModal(){
+  document.getElementById('wa-tar-utility').value   = (waTariffs.utility||0).toFixed(4);
+  document.getElementById('wa-tar-marketing').value = (waTariffs.marketing||0).toFixed(4);
+  document.getElementById('wa-tar-auth').value      = (waTariffs.authentication||0).toFixed(4);
+  document.getElementById('wa-tar-service').value   = (waTariffs.service||0).toFixed(4);
+  openModal('wa-tariffs-modal');
+  setTimeout(()=>document.getElementById('wa-tar-utility')?.focus(), 50);
+}
+
+async function saveWATariffs(){
+  if(!_currentSession){ toast('Sessão expirada','error'); return; }
+  const uid = _currentSession.user.id;
+  const newVals = {
+    utility:        parseFloat(document.getElementById('wa-tar-utility').value)   || 0,
+    marketing:      parseFloat(document.getElementById('wa-tar-marketing').value) || 0,
+    authentication: parseFloat(document.getElementById('wa-tar-auth').value)      || 0,
+    service:        parseFloat(document.getElementById('wa-tar-service').value)   || 0,
+  };
+  const rows = Object.entries(newVals).map(([category, price_brl])=>({
+    owner_id: uid, category, price_brl, updated_at: new Date().toISOString()
+  }));
+  const { error } = await sb.from('cmd_wa_tariffs').upsert(rows, { onConflict:'owner_id,category' });
+  if(error){ toast('Erro ao salvar tarifas: '+error.message,'error'); return; }
+  waTariffs = newVals;
+  closeModal('wa-tariffs-modal');
+  if(currentView==='whatsapp') renderWhatsApp();
+  toast('Tarifas atualizadas','success');
+}
+
+// ══════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════
 function init(){
   document.getElementById('topbar-date').textContent=today.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'}).toUpperCase();
   document.getElementById('m-date').value=isoToday;
   document.getElementById('meeting-date').value=isoToday;
+  // Sync segmented control com peopleSort persistido
+  document.querySelectorAll('#view-people .seg-btn').forEach(b=>{
+    b.classList.toggle('on', b.dataset.sort===peopleSort);
+  });
   // Check existing session
   sb.auth.getSession().then(({data:{session}})=>{
     if(!session){

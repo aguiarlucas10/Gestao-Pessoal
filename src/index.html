@@ -54,6 +54,10 @@
       <button class="nav-item" onclick="switchNav('11',this)"><svg class="nav-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 4A1.5 1.5 0 0 1 4 2.5h6A1.5 1.5 0 0 1 11.5 4v5A1.5 1.5 0 0 1 10 10.5H7l-3 3v-3A1.5 1.5 0 0 1 2.5 9V4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13.5 7v3a1.5 1.5 0 0 1-1.5 1.5h-.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>1:1s</button>
       <button class="nav-item" onclick="switchNav('reunioes',this)"><svg class="nav-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="3" width="10" height="11.5" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="5.5" y="1.5" width="5" height="3" rx="0.5" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8.5h5M5.5 11h3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Reuniões</button>
     </div>
+    <div class="nav-section">
+      <div class="nav-sec-label">Operação</div>
+      <button class="nav-item" onclick="switchNav('whatsapp',this)"><svg class="nav-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 13.5l1-3a5.5 5.5 0 1 1 2 2l-3 1z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6 7.5c.3 1 1 1.7 2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>WhatsApp</button>
+    </div>
     <div class="nav-footer">
       <div class="user-chip">
         <div class="user-av" id="user-av">L</div>
@@ -137,6 +141,12 @@
             <button class="fchip f-alta" onclick="setPeopleFilter('alta',this)">Alta</button>
             <button class="fchip f-media" onclick="setPeopleFilter('media',this)">Média</button>
             <button class="fchip f-baixa" onclick="setPeopleFilter('baixa',this)">Baixa</button>
+            <span class="toolbar-sep" aria-hidden="true"></span>
+            <span class="toolbar-label">Ordenar</span>
+            <div class="seg" role="group" aria-label="Ordenação das tarefas">
+              <button class="seg-btn" data-sort="prazo" onclick="setPeopleSort('prazo',this)">Prazo</button>
+              <button class="seg-btn" data-sort="prioridade" onclick="setPeopleSort('prioridade',this)">Prioridade</button>
+            </div>
             <div class="board-search" style="margin-left:auto">
               <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m11 11 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               <input type="text" placeholder="Buscar..." aria-label="Buscar pessoas e tarefas" oninput="peopleQ=this.value;debouncedRenderPeople()">
@@ -223,6 +233,69 @@
               <div style="font-family:var(--font-display);font-size:18px;color:var(--t1);margin-bottom:6px">Escolha alguém</div>
               <div style="font-size:12.5px;line-height:1.55">Selecione uma pessoa à esquerda para abrir o 1:1, ou use o <strong>+</strong> para adicionar.</div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WHATSAPP -->
+      <div class="view-panel" id="view-whatsapp">
+        <div style="flex:1;display:flex;flex-direction:column;overflow:auto">
+          <div class="wa-toolbar">
+            <span class="toolbar-label">Período</span>
+            <div class="seg" role="group" aria-label="Período">
+              <button class="seg-btn" data-wa-period="7d"   onclick="setWAPeriod('7d',this)">7 dias</button>
+              <button class="seg-btn on" data-wa-period="30d"  onclick="setWAPeriod('30d',this)">30 dias</button>
+              <button class="seg-btn" data-wa-period="this" onclick="setWAPeriod('this',this)">Este mês</button>
+              <button class="seg-btn" data-wa-period="prev" onclick="setWAPeriod('prev',this)">Mês passado</button>
+            </div>
+            <span class="toolbar-sep" aria-hidden="true"></span>
+            <span class="toolbar-label">Categoria</span>
+            <button class="fchip f-all on" data-wa-cat="all" onclick="setWACategory('all',this)">Todas</button>
+            <button class="fchip wa-util" data-wa-cat="utility" onclick="setWACategory('utility',this)">Utility</button>
+            <button class="fchip wa-mkt" data-wa-cat="marketing" onclick="setWACategory('marketing',this)">Marketing</button>
+            <span class="toolbar-sep" aria-hidden="true"></span>
+            <select class="wa-num-select" id="wa-num-select" aria-label="Filtrar por número" onchange="setWANumber(this.value)">
+              <option value="all">Todos os números</option>
+            </select>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn-sm" onclick="openWANumbersModal()">Gerenciar números</button>
+              <button class="btn-sm" onclick="openWATariffsModal()">Tarifas</button>
+            </div>
+          </div>
+
+          <div class="wa-kpi-row">
+            <div class="wa-kpi">
+              <div class="wa-kpi-label">Conversations</div>
+              <div class="wa-kpi-value" id="wa-kpi-total">—</div>
+              <div class="wa-kpi-sub" id="wa-kpi-total-sub">no período</div>
+            </div>
+            <div class="wa-kpi">
+              <div class="wa-kpi-label"><span class="wa-dot wa-dot-util"></span>Utility</div>
+              <div class="wa-kpi-value" id="wa-kpi-util">—</div>
+              <div class="wa-kpi-sub" id="wa-kpi-util-sub">—</div>
+            </div>
+            <div class="wa-kpi">
+              <div class="wa-kpi-label"><span class="wa-dot wa-dot-mkt"></span>Marketing</div>
+              <div class="wa-kpi-value" id="wa-kpi-mkt">—</div>
+              <div class="wa-kpi-sub" id="wa-kpi-mkt-sub">—</div>
+            </div>
+            <div class="wa-kpi">
+              <div class="wa-kpi-label">Custo estimado</div>
+              <div class="wa-kpi-value" id="wa-kpi-cost">R$ —</div>
+              <div class="wa-kpi-sub">Tarifas configuradas · fatura Meta pode variar</div>
+            </div>
+          </div>
+
+          <div class="wa-chart-card">
+            <div class="wa-chart-head">
+              <span class="wa-chart-title">Conversations por dia</span>
+              <div class="wa-legend">
+                <span class="wa-legend-item"><span class="wa-dot wa-dot-util"></span>Utility (inclui authentication)</span>
+                <span class="wa-legend-item"><span class="wa-dot wa-dot-mkt"></span>Marketing</span>
+              </div>
+            </div>
+            <div class="wa-chart-wrap" id="wa-chart"></div>
+            <div class="wa-tooltip" id="wa-tooltip" role="tooltip" aria-hidden="true"></div>
           </div>
         </div>
       </div>
@@ -325,6 +398,53 @@
     <div class="briefing-body" id="briefing-body"></div>
     <div class="briefing-footer">
       <button class="btn-sm primary" onclick="closeBriefing()" style="padding:8px 24px">Começar o dia</button>
+    </div>
+  </div>
+</div>
+
+<!-- WHATSAPP NUMBERS MODAL -->
+<div class="modal-overlay" id="wa-numbers-modal" onclick="closeModalOut(event,'wa-numbers-modal')">
+  <div class="modal wa-modal-wide" role="dialog" aria-modal="true" aria-labelledby="wa-numbers-modal-title">
+    <div class="modal-header">
+      <span class="modal-title" id="wa-numbers-modal-title">Números WhatsApp</span>
+      <button class="sp-close" onclick="closeModal('wa-numbers-modal')" aria-label="Fechar modal">✕</button>
+    </div>
+    <div class="wa-numbers-list" id="wa-numbers-list"></div>
+    <div class="wa-numbers-add">
+      <div class="modal-row">
+        <div class="sp-field"><label class="sp-label" for="wa-num-display">Display Phone Number</label><input class="modal-input" id="wa-num-display" placeholder="+55 11 99999-0000"></div>
+        <div class="sp-field"><label class="sp-label" for="wa-num-pid">Phone Number ID (Meta)</label><input class="modal-input" id="wa-num-pid" placeholder="106540352242922"></div>
+      </div>
+      <div class="modal-row">
+        <div class="sp-field"><label class="sp-label" for="wa-num-label">Apelido</label><input class="modal-input" id="wa-num-label" placeholder="Ex: Saint Germain Vendas"></div>
+        <div class="sp-field"><label class="sp-label" for="wa-num-country">País</label><input class="modal-input" id="wa-num-country" placeholder="BR" value="BR" maxlength="2"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary" onclick="addWANumber()">Adicionar número</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WHATSAPP TARIFFS MODAL -->
+<div class="modal-overlay" id="wa-tariffs-modal" onclick="closeModalOut(event,'wa-tariffs-modal')">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="wa-tariffs-modal-title">
+    <div class="modal-header">
+      <span class="modal-title" id="wa-tariffs-modal-title">Tarifas por categoria</span>
+      <button class="sp-close" onclick="closeModal('wa-tariffs-modal')" aria-label="Fechar modal">✕</button>
+    </div>
+    <p style="font-size:12px;color:var(--t3);margin:0;line-height:1.5">Valores em reais por conversation (janela de 24h). Tarifas padrão refletem a tabela BR da Meta; ajuste se sua negociação for diferente.</p>
+    <div class="modal-row">
+      <div class="sp-field"><label class="sp-label" for="wa-tar-utility">Utility (R$)</label><input class="modal-input" id="wa-tar-utility" type="number" step="0.0001" min="0"></div>
+      <div class="sp-field"><label class="sp-label" for="wa-tar-marketing">Marketing (R$)</label><input class="modal-input" id="wa-tar-marketing" type="number" step="0.0001" min="0"></div>
+    </div>
+    <div class="modal-row">
+      <div class="sp-field"><label class="sp-label" for="wa-tar-auth">Authentication (R$)</label><input class="modal-input" id="wa-tar-auth" type="number" step="0.0001" min="0"></div>
+      <div class="sp-field"><label class="sp-label" for="wa-tar-service">Service (R$)</label><input class="modal-input" id="wa-tar-service" type="number" step="0.0001" min="0"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-ghost" onclick="closeModal('wa-tariffs-modal')">Cancelar</button>
+      <button class="btn-primary" onclick="saveWATariffs()">Salvar tarifas</button>
     </div>
   </div>
 </div>

@@ -45,3 +45,37 @@ Depois: vercel.com/new → import repo → Deploy
 | OpenAI key | Secret no Supabase, nunca no browser |
 | Acesso | Supabase Auth email/senha |
 | HTTPS | Certificado automático via Vercel |
+
+## PASSO 5 — WhatsApp Monitor (migration v7 + webhook Meta)
+
+### 5.1 — Rodar migration v7
+SQL Editor → executar `supabase/migration_v7_whatsapp.sql`. Cria tabelas `cmd_wa_numbers`, `cmd_wa_daily`, `cmd_wa_tariffs`, `cmd_wa_seen`, função `wa_record` e job `pg_cron` que poda dedup a cada hora. Se a extensão `pg_cron` não estiver habilitada, vá em Database → Extensions → pg_cron → Enable, e re-rode o trecho final da migration.
+
+### 5.2 — Configurar secrets do webhook
+Escolha um `WA_VERIFY_TOKEN` arbitrário (string segura) e obtenha o `App Secret` em Meta Developer Console → App Settings → Basic.
+
+```bash
+supabase secrets set WA_VERIFY_TOKEN=cole_seu_token_aqui
+supabase secrets set WA_APP_SECRET=cole_app_secret_da_meta
+```
+
+### 5.3 — Deploy do webhook
+```bash
+supabase functions deploy whatsapp-webhook --no-verify-jwt
+```
+URL pública resultante:
+`https://cvymqbjaxtricwimusld.functions.supabase.co/whatsapp-webhook`
+
+### 5.4 — Registrar webhook no Meta
+Meta Developer Console → WhatsApp → Configuration → Webhook:
+- **Callback URL**: URL acima
+- **Verify token**: o mesmo `WA_VERIFY_TOKEN`
+- **Subscribe**: campo `messages`
+
+### 5.5 — Cadastrar os números no CMD.CENTER
+Operação → WhatsApp → "Gerenciar números". Cadastrar `display_phone_number` (ex: +55 11 99999-0000) + `phone_number_id` (Meta) + apelido. Conversations de números **não cadastrados são descartadas silenciosamente** pelo webhook.
+
+### 5.6 — Validar
+- Disparar 1 template utility e 1 marketing para um destinatário de teste.
+- KPIs e gráfico devem refletir em segundos.
+- Hover na barra mostra gasto por número.
