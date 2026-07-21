@@ -1339,8 +1339,22 @@ function selectOO(pid){
         ${renderOOActions(pid)}
       </div>
       <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">Notas</div></div>
-        <textarea class="oo-note-area" placeholder="Anotações da conversa..." onblur="oo11['${pid}'].notes=this.value;saveOOState()">${data.notes||''}</textarea>
+        <div class="oo-section-head"><div class="oo-section-title">Notas</div><span id="oo-note-status-${pid}" class="rte-status ok" aria-live="polite"></span></div>
+        <div class="rte-toolbar" role="toolbar" aria-label="Formatação das notas">
+          <button type="button" class="rte-btn" data-cmd="bold" title="Negrito (Ctrl+B)"><b>B</b></button>
+          <button type="button" class="rte-btn" data-cmd="italic" title="Itálico (Ctrl+I)"><i>I</i></button>
+          <button type="button" class="rte-btn" data-cmd="underline" title="Sublinhado (Ctrl+U)"><span style="text-decoration:underline">U</span></button>
+          <span class="rte-sep"></span>
+          <button type="button" class="rte-btn rte-size" data-size="2" title="Texto pequeno" style="font-size:11px">A</button>
+          <button type="button" class="rte-btn rte-size" data-size="3" title="Texto normal" style="font-size:14px">A</button>
+          <button type="button" class="rte-btn rte-size" data-size="5" title="Texto grande" style="font-size:18px">A</button>
+          <span class="rte-sep"></span>
+          ${rteSwatches()}
+          <span class="rte-sep"></span>
+          <button type="button" class="rte-btn" data-cmd="insertUnorderedList" title="Lista">•</button>
+          <button type="button" class="rte-btn" data-cmd="removeFormat" title="Limpar formatação">A̶</button>
+        </div>
+        <div id="oo-note-${pid}" class="oo-note-area rte-editor" contenteditable="true" data-ph="Anotações da conversa..." style="min-height:300px"></div>
       </div>
       <div class="oo-section">
         <div class="oo-section-head"><div class="oo-section-title">Demandas em aberto</div></div>
@@ -1359,7 +1373,50 @@ function selectOO(pid){
         <div style="font-size:12px;color:var(--t4);padding:4px 0">Carregando...</div>
       </div>
     </div>`;
+  initOONote(pid);
   loadOOMeetings(pid);
+}
+
+// Editor rico das notas do 1:1 (negrito/itálico/sublinhado, tamanho, cor) + auto-save
+function initOONote(pid){
+  const editor=document.getElementById('oo-note-'+pid);
+  if(!editor) return;
+  const statusEl=document.getElementById('oo-note-status-'+pid);
+  const section=editor.closest('.oo-section');
+  try{ document.execCommand('styleWithCSS',false,true); }catch(_){}
+  loadAtaIntoEditor(editor, (oo11[pid]||{}).notes);
+  editor.style.minHeight='300px';
+
+  let saveTimer=null;
+  const doSave=()=>{
+    clearTimeout(saveTimer); saveTimer=null;
+    const html=serializeAta(editor);
+    const d=ooData(pid);
+    if(html===(d.notes||'')){ if(statusEl){ statusEl.textContent=''; statusEl.className='rte-status ok'; } return; }
+    d.notes=html;
+    if(statusEl){ statusEl.textContent='Salvo ✓'; statusEl.className='rte-status ok'; }
+    saveOOState();
+  };
+  const scheduleSave=()=>{ if(statusEl){ statusEl.textContent='Editando…'; statusEl.className='rte-status'; } clearTimeout(saveTimer); saveTimer=setTimeout(doSave,700); };
+  const updateBtnStates=()=>{ ['bold','italic','underline'].forEach(c=>{ let on=false; try{ on=document.queryCommandState(c); }catch(_){} const b=section.querySelector(`.rte-btn[data-cmd="${c}"]`); if(b) b.classList.toggle('on',on); }); };
+
+  section.querySelectorAll('.rte-btn[data-cmd]').forEach(b=>{
+    b.addEventListener('mousedown',e=>e.preventDefault());
+    b.addEventListener('click',()=>{ document.execCommand(b.dataset.cmd,false,null); editor.focus(); updateBtnStates(); scheduleSave(); });
+  });
+  section.querySelectorAll('.rte-size').forEach(b=>{
+    b.addEventListener('mousedown',e=>e.preventDefault());
+    b.addEventListener('click',()=>{ document.execCommand('fontSize',false,b.dataset.size); editor.focus(); scheduleSave(); });
+  });
+  section.querySelectorAll('.rte-color').forEach(b=>{
+    b.addEventListener('mousedown',e=>e.preventDefault());
+    b.addEventListener('click',()=>{ document.execCommand('foreColor',false,b.dataset.color); editor.focus(); scheduleSave(); });
+  });
+
+  editor.addEventListener('input',scheduleSave);
+  editor.addEventListener('keyup',updateBtnStates);
+  editor.addEventListener('mouseup',updateBtnStates);
+  editor.addEventListener('blur',doSave);
 }
 
 async function loadOOMeetings(pid){
@@ -1735,7 +1792,11 @@ async function saveMeetingNotes(id, notes){
 }
 
 // ── Helpers da ata (texto rico armazenado como HTML) ──
-function ataIsHTML(raw){ return /<(div|br|b|i|u|font|span|strong|em|p)[\s/>]/i.test(raw||''); }
+// Paleta compartilhada do editor rico (ata de reuniões + notas dos 1:1s)
+const RTE_COLORS=[['Padrão','#2b2622'],['Oxblood','#7a1f24'],['Vermelho','#b23a26'],['Âmbar','#b8791f'],['Verde','#4d6b34'],['Teal','#2f6b6b'],['Plum','#6a3a58']];
+function rteSwatches(){ return RTE_COLORS.map(([n,c])=>`<button type="button" class="rte-color" data-color="${c}" style="--sw:${c}" title="${n}" aria-label="Cor: ${n}"></button>`).join(''); }
+
+function ataIsHTML(raw){ return /<(div|br|b|i|u|font|span|strong|em|p|ul|ol|li)[\s/>]/i.test(raw||''); }
 function ataToHTML(raw){
   if(!raw) return '';
   if(ataIsHTML(raw)) return raw;              // já é HTML (formato novo)
@@ -1774,8 +1835,7 @@ function serializeAta(editor){
 function editMeetingNotes(id){
   const m=allMeetings.find(x=>x.id===id);
   if(!m) return;
-  const COLORS=[['Padrão','#2b2622'],['Oxblood','#7a1f24'],['Vermelho','#b23a26'],['Âmbar','#b8791f'],['Verde','#4d6b34'],['Teal','#2f6b6b'],['Plum','#6a3a58']];
-  const swatches=COLORS.map(([n,c])=>`<button type="button" class="rte-color" data-color="${c}" style="--sw:${c}" title="${n}" aria-label="Cor: ${n}"></button>`).join('');
+  const swatches=rteSwatches();
   // Editor de ata com formatação rica + auto-save (substitui prompt nativo)
   document.body.insertAdjacentHTML('beforeend',`
     <div class="oo-modal-overlay" id="edit-ata-modal">
