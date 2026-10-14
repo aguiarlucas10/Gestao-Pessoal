@@ -7,8 +7,8 @@ cmdcenter/
 │   └── index.html              ← App principal
 ├── supabase/
 │   ├── functions/
-│   │   ├── ai-meeting/index.ts ← GPT-4o gera ata + demandas
-│   │   └── transcribe/index.ts ← Whisper transcrição
+│   │   ├── ai-meeting/index.ts ← gpt-6-sol gera ata + demandas
+│   │   └── transcribe/index.ts ← gpt-transcribe (áudio → texto, com glossário)
 │   └── migration_v2_rls.sql    ← RLS com auth (executar agora)
 └── vercel.json
 ```
@@ -30,6 +30,13 @@ supabase secrets set OPENAI_API_KEY=sk-SUA_CHAVE_AQUI
 supabase functions deploy ai-meeting
 supabase functions deploy transcribe
 ```
+
+Modelos (opcional — sem esses secrets valem os padrões):
+```bash
+supabase secrets set TRANSCRIBE_MODEL=gpt-transcribe   # transcrição
+supabase secrets set AI_MEETING_MODEL=gpt-6-sol        # ata + demandas
+```
+O vocabulário fixo da transcrição (marca, canais, jargão) fica em `BASE_KEYWORDS` em `supabase/functions/transcribe/index.ts`. Os nomes do time e os participantes digitados são enviados automaticamente pelo app.
 
 ## PASSO 4 — GitHub + Vercel
 ```bash

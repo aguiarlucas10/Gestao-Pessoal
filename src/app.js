@@ -29,7 +29,7 @@ let notifications=[], notifOpen=false;
 let currentView='board';
 
 // Recording
-let mediaRecorder=null, recStream=null, recInterval=null, recSeconds=0;
+let recInterval=null, recSeconds=0;
 let transcriptLines=[], aiDemands=[];
 
 // 1:1 local state (populated from Supabase on login)
@@ -843,10 +843,23 @@ async function addTask(){
 // ══════════════════════════════════════════════
 // TRANSCRIPTION (via Edge Function — sem key exposta)
 // ══════════════════════════════════════════════
-let recStream2=null, isRecording=false, whisperProcessing=false;
-let audioChunks=[];
+// Dois gravadores em paralelo sobre o mesmo microfone:
+//  · live  → trechos curtos (20–40s) só para o texto aparecer durante a reunião
+//  · final → trechos longos (4–6min) retranscritos ao parar, com contexto do trecho anterior
+// Os cortes acontecem numa pausa de fala (detectada pelo volume), não no meio de palavra.
+const LIVE_SEG={ min:20000, max:40000 };
+const FINAL_SEG={ min:240000, max:360000 };
+const SILENCE_RMS=0.015, SILENCE_MS=350;
+
+let recStream2=null, isRecording=false;
+let liveSeg=null, finalSeg=null;
+let finalSegments=[], finalParts=[];  // blobs do gravador final e seus textos (null = falhou)
+let finalQueue=Promise.resolve(), finalLastErr='';
+let liveQueue=Promise.resolve();      // garante ordem e contexto das transcrições ao vivo
+let liveFailures=0, lastLiveValue='';
+let audioCtx=null, vadTimer=null, silentMs=0;
 let recMimeType='audio/webm';
-let whisperInterval=null;
+let finalizing=false;
 
 function getTransText(){ return document.getElementById('trans-text'); }
 function getTranscriptContent(){ return getTransText().value.trim(); }
@@ -863,72 +876,132 @@ function showTransTextarea(){
   ta.style.display='block';
 }
 
-async function sendBlobToWhisper(blob){
-  if(!_currentSession||blob.size<1000) return;
-  const liveEl=document.getElementById('trans-live-text');
-  try {
-    whisperProcessing=true;
-    if(liveEl) liveEl.textContent='Transcrevendo...';
-    const fd=new FormData();
-    fd.append('file',blob,'audio.webm');
-    const res=await fetch(`${SB_URL}/functions/v1/transcribe`,{
-      method:'POST',
-      headers:{ 'Authorization':'Bearer '+_currentSession.access_token },
-      body:fd
-    });
-    if(!res.ok) return;
-    const data=await res.json();
-    if(data.text?.trim()){
-      const ta=getTransText();
-      const sep=ta.value && !ta.value.endsWith('\n') && !ta.value.endsWith(' ')?' ':'';
-      ta.value+=sep+data.text.trim();
-      ta.scrollTop=ta.scrollHeight;
-      updateWordCount();
-      transcriptLines=[{id:'full',time:'',text:ta.value}];
-    }
-  } catch(e){ /* Whisper falhou — silencioso, transcrição apenas não avança */ }
-  finally {
-    whisperProcessing=false;
-    if(liveEl && isRecording) liveEl.textContent='Ouvindo...';
-  }
+function pickMimeType(){
+  return ['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(t=>MediaRecorder.isTypeSupported(t))||'';
+}
+function audioFileName(){ return recMimeType.startsWith('audio/mp4')?'audio.m4a':'audio.webm'; }
+
+// Nomes que o modelo de transcrição deve reconhecer: time + participantes digitados
+function transcribeKeywords(){
+  const typed=(document.getElementById('meeting-people').value||'').split(/[,;]/);
+  return [...PEOPLE.map(p=>p.name), ...typed].map(s=>s.trim()).filter(Boolean);
 }
 
-function startNewRecorder(){
-  if(!recStream2||!isRecording) return;
-  const chunks=[];
-  recMimeType=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
-  mediaRecorder=new MediaRecorder(recStream2,{mimeType:recMimeType});
-  mediaRecorder.ondataavailable=e=>{ if(e.data.size>0) chunks.push(e.data); };
-  mediaRecorder.onstop=()=>{
-    if(chunks.length){
-      const blob=new Blob(chunks,{type:recMimeType});
-      audioChunks.push(blob);
-      sendBlobToWhisper(blob);
+async function transcribeBlob(blob, context){
+  if(!_currentSession) throw new Error('Sessão expirada');
+  const fd=new FormData();
+  fd.append('file',blob,audioFileName());
+  if(context) fd.append('context',context.slice(-800));
+  transcribeKeywords().forEach(k=>fd.append('keywords[]',k));
+  const res=await fetch(`${SB_URL}/functions/v1/transcribe`,{
+    method:'POST',
+    headers:{ 'Authorization':'Bearer '+_currentSession.access_token },
+    body:fd
+  });
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error||('HTTP '+res.status));
+  return (data.text||'').trim();
+}
+
+// Gravador segmentado: corta em pausa de fala entre min e max ms; força o corte em max
+function createSegmenter(cfg, onBlob){
+  let rec=null, startedAt=0, pending=0, idle=null;
+  const begin=()=>{
+    const chunks=[];
+    const r=new MediaRecorder(recStream2,{mimeType:recMimeType,audioBitsPerSecond:48000});
+    r.ondataavailable=e=>{ if(e.data.size>0) chunks.push(e.data); };
+    pending++;
+    r.onstop=()=>{
+      if(chunks.length) onBlob(new Blob(chunks,{type:recMimeType}));
+      pending--;
+      if(!pending && idle) idle();
+    };
+    r.start();
+    rec=r; startedAt=Date.now();
+  };
+  const cut=()=>{ const old=rec; begin(); if(old.state!=='inactive') old.stop(); };
+  return {
+    start:begin,
+    tick(){
+      const age=Date.now()-startedAt;
+      if(age>=cfg.max || (age>=cfg.min && silentMs>=SILENCE_MS)) cut();
+    },
+    stop(){
+      return new Promise(resolve=>{
+        idle=resolve;
+        if(rec && rec.state!=='inactive') rec.stop();
+        if(!pending) resolve();
+      });
     }
   };
-  mediaRecorder.start();
+}
+
+function startVAD(){
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  const analyser=audioCtx.createAnalyser();
+  analyser.fftSize=2048;
+  audioCtx.createMediaStreamSource(recStream2).connect(analyser);
+  const buf=new Float32Array(analyser.fftSize);
+  silentMs=0;
+  vadTimer=setInterval(()=>{
+    analyser.getFloatTimeDomainData(buf);
+    let sum=0; for(const v of buf) sum+=v*v;
+    silentMs=Math.sqrt(sum/buf.length)<SILENCE_RMS ? silentMs+100 : 0;
+    liveSeg?.tick(); finalSeg?.tick();
+  },100);
+}
+
+function stopVAD(){
+  if(vadTimer){ clearInterval(vadTimer); vadTimer=null; }
+  if(audioCtx){ audioCtx.close().catch(()=>{}); audioCtx=null; }
+}
+
+function onLiveBlob(blob){
+  if(blob.size<1000) return;
+  liveQueue=liveQueue.then(async()=>{
+    const liveEl=document.getElementById('trans-live-text');
+    if(liveEl && isRecording) liveEl.textContent='Transcrevendo...';
+    try {
+      const ta=getTransText();
+      const text=await transcribeBlob(blob, ta.value);
+      if(text){
+        const sep=ta.value && !/[\s]$/.test(ta.value)?' ':'';
+        ta.value+=sep+text;
+        ta.scrollTop=ta.scrollHeight;
+        lastLiveValue=ta.value;
+        updateWordCount();
+        transcriptLines=[{id:'full',time:'',text:ta.value}];
+      }
+    } catch(e){
+      liveFailures++;
+      if(liveFailures===1) toast('Falha na transcrição ao vivo: '+esc(e.message)+'. O áudio continua sendo gravado e será transcrito ao parar.','error');
+    } finally {
+      if(liveEl && isRecording) liveEl.textContent=liveFailures?`Ouvindo... (${liveFailures} trecho(s) com falha ao vivo)`:'Ouvindo...';
+    }
+  });
 }
 
 async function toggleRecording(){
+  if(finalizing) return;
   const btn=document.getElementById('rec-btn');
   if(!isRecording){
     try {
-      recStream2=await navigator.mediaDevices.getUserMedia({audio:true});
-      audioChunks=[];
+      // Sem cancelamento de eco: em reunião online ele apagaria as vozes que saem do alto-falante
+      recStream2=await navigator.mediaDevices.getUserMedia({audio:{
+        echoCancellation:false, noiseSuppression:false, autoGainControl:true, channelCount:1
+      }});
+      recMimeType=pickMimeType();
+      finalSegments=[]; finalParts=[]; finalQueue=Promise.resolve(); finalLastErr='';
+      liveFailures=0; liveQueue=Promise.resolve();
       isRecording=true;
 
-      // Start first recorder
-      startNewRecorder();
-
-      // Every 30s: stop current recorder (triggers onstop → send to Whisper) and start a new one
-      whisperInterval=setInterval(()=>{
-        if(!isRecording) return;
-        if(mediaRecorder&&mediaRecorder.state==='recording') mediaRecorder.stop();
-        startNewRecorder();
-      },30000);
+      liveSeg=createSegmenter(LIVE_SEG, onLiveBlob);
+      finalSeg=createSegmenter(FINAL_SEG, onFinalBlob);
+      liveSeg.start(); finalSeg.start();
+      startVAD();
 
       showTransTextarea();
-      getTransText().value='';
+      getTransText().value=''; lastLiveValue='';
       btn.className='rec-btn recording';
       document.getElementById('rec-label').textContent='Parar Gravação';
       document.getElementById('rec-timer').style.display='block';
@@ -936,17 +1009,19 @@ async function toggleRecording(){
       const liveEl=document.getElementById('trans-live-text');
       if(liveEl) liveEl.textContent='Ouvindo...';
       startTimer();
-      toast('Gravando — Whisper transcreve a cada 30s');
-    } catch(e){ toast('Microfone bloqueado: '+e.message,'error'); }
+      toast('Gravando — o texto aparece a cada pausa de fala');
+    } catch(e){ toast('Microfone bloqueado: '+esc(e.message),'error'); }
   } else {
-    stopRec();
     btn.className='rec-btn idle';
     document.getElementById('rec-label').textContent='Iniciar Gravação';
     document.getElementById('rec-timer').style.display='none';
-    document.getElementById('trans-live-bar').style.display='none';
     clearInterval(recInterval);
+    const liveEl=document.getElementById('trans-live-text');
+    if(liveEl) liveEl.textContent='Finalizando gravação...';
+    await stopRec();
+    document.getElementById('trans-live-bar').style.display='none';
     updateWordCount();
-    toast('Gravação finalizada — edite o texto e clique em Gerar com IA');
+    await finalizeTranscript({auto:true});
   }
 }
 
@@ -960,45 +1035,69 @@ function startTimer(){
   },1000);
 }
 
-function stopRec(){
+async function stopRec(){
   isRecording=false;
-  if(whisperInterval){ clearInterval(whisperInterval); whisperInterval=null; }
-  if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop(); // triggers onstop → sends final chunk
+  stopVAD();
+  const pending=[liveSeg?.stop(), finalSeg?.stop()];
+  liveSeg=null; finalSeg=null;
+  await Promise.all(pending);   // último trecho de cada gravador já entregue
   if(recStream2){ recStream2.getTracks().forEach(t=>t.stop()); recStream2=null; }
-  mediaRecorder=null;
+  await liveQueue;
 }
 
-async function refineWithWhisper(){
-  if(!audioChunks.length){ toast('Nenhum áudio gravado para refinar','error'); return; }
+// Transcrição definitiva: cada trecho longo entra na fila assim que fecha (ainda durante a
+// reunião), em ordem, com o final do trecho anterior como contexto
+function queueFinalSegment(i){
+  finalQueue=finalQueue.then(async()=>{
+    try { finalParts[i]=await transcribeBlob(finalSegments[i], finalParts.slice(0,i).filter(Boolean).join(' ')); }
+    catch(e){ finalParts[i]=null; finalLastErr=e.message; }
+  });
+}
+function onFinalBlob(blob){
+  if(blob.size<1000) return;
+  finalSegments.push(blob);
+  queueFinalSegment(finalSegments.length-1);
+}
+
+async function finalizeTranscript({auto=false}={}){
+  if(!finalSegments.length){ if(!auto) toast('Nenhum áudio gravado para transcrever','error'); return; }
   const ta=getTransText();
-  const oldText=ta.value;
-  ta.value='Refinando transcrição com Whisper (0/'+audioChunks.length+')...';
+  const before=ta.value;
+  const userEdited=auto && before!==lastLiveValue;
+  if(!auto){ finalParts=[]; finalLastErr=''; finalSegments.forEach((_,i)=>queueFinalSegment(i)); }
+  finalizing=true;
   ta.disabled=true;
-  try {
-    if(!_currentSession){ toast('Sessão expirada','error'); return; }
-    let fullText='';
-    for(let i=0;i<audioChunks.length;i++){
-      ta.value='Refinando transcrição com Whisper ('+(i+1)+'/'+audioChunks.length+')...';
-      const blob=audioChunks[i];
-      if(blob.size<1000) continue;
-      const fd=new FormData(); fd.append('file',blob,'audio.webm');
-      const res=await fetch(`${SB_URL}/functions/v1/transcribe`,{
-        method:'POST',
-        headers:{ 'Authorization':'Bearer '+_currentSession.access_token },
-        body:fd
-      });
-      if(!res.ok) continue;
-      const data=await res.json();
-      if(data.text?.trim()) fullText+=(fullText?' ':'')+data.text.trim();
-    }
-    if(fullText){
-      ta.value=fullText;
-      transcriptLines=[{id:'full',time:'',text:ta.value}];
-      updateWordCount();
-      toast('Transcrição refinada com Whisper');
-    } else { ta.value=oldText; toast('Whisper não retornou texto','error'); }
-  } catch(e){ ta.value=oldText; toast('Erro: '+e.message,'error'); }
-  ta.disabled=false;
+  const total=finalSegments.length;
+  const progress=()=>{ ta.value=`Finalizando a transcrição completa (${finalParts.filter(p=>p!==undefined).length}/${total} trechos)...`; };
+  progress();
+  const progTimer=setInterval(progress,500);
+  try { await finalQueue; }
+  finally { clearInterval(progTimer); ta.disabled=false; finalizing=false; }
+
+  const failed=finalParts.filter(p=>p===null).length;
+  const finalText=finalParts.filter(Boolean).join(' ');
+  if(failed || !finalText){
+    ta.value=before;
+    toast(`Transcrição final falhou em ${failed||total} de ${total} trecho(s)${finalLastErr?': '+esc(finalLastErr):''}. Mantive o texto ao vivo — use "Refazer transcrição".`,'error');
+    return;
+  }
+  const apply=()=>{
+    ta.value=finalText; lastLiveValue=finalText;
+    transcriptLines=[{id:'full',time:'',text:finalText}];
+    updateWordCount();
+  };
+  if(userEdited){
+    ta.value=before;
+    toast('Transcrição final pronta, mas você editou o texto ao vivo. Substituir? (Ou depois em "Refazer transcrição".)','info',{label:'Substituir',cb:apply});
+    return;
+  }
+  apply();
+  toast(auto?'Transcrição final pronta — revise e clique em Gerar com IA':'Transcrição refeita');
+}
+
+function refineTranscript(){
+  if(isRecording||finalizing){ toast('Aguarde a gravação terminar','error'); return; }
+  return finalizeTranscript({auto:false});
 }
 
 function clearTranscript(){
@@ -1006,7 +1105,7 @@ function clearTranscript(){
   ta.value=''; ta.style.display='none';
   document.getElementById('transcript-empty').style.display='flex';
   document.getElementById('trans-live-bar').style.display='none';
-  transcriptLines=[]; aiDemands=[]; audioChunks=[];
+  transcriptLines=[]; aiDemands=[]; finalSegments=[]; finalParts=[]; lastLiveValue='';
   updateWordCount();
   document.getElementById('trans-ai-area').innerHTML=`<div style="color:var(--t4);font-size:12px;line-height:1.7">Após gravar ou colar o transcript, clique em <strong style="color:var(--t2)">Gerar com IA</strong>.</div>`;
 }
@@ -1036,6 +1135,7 @@ function pasteMode(){
     const transTa=getTransText();
     transTa.value=txt;
     transcriptLines=[{id:'full',time:'',text:txt}];
+    finalSegments=[]; finalParts=[];   // texto colado não tem áudio para refazer
     updateWordCount();
     toast('Transcrição importada');
   });
@@ -1047,13 +1147,14 @@ async function generateAI(){
   const title=document.getElementById('meeting-title').value||'Reunião';
   const participants=document.getElementById('meeting-people').value||'time';
   const aiArea=document.getElementById('trans-ai-area');
-  aiArea.innerHTML=`<div class="ai-loading"><div class="spinner"></div> Gerando ata e demandas com GPT-4o...</div>`;
+  aiArea.innerHTML=`<div class="ai-loading"><div class="spinner"></div> Gerando ata e demandas com IA...</div>`;
   try {
     if(!_currentSession){ toast('Sessão expirada','error'); return; }
+    const people=PEOPLE.map(p=>({ id:p.id, name:p.name, role:p.role||'' }));
     const res=await fetch(`${SB_URL}/functions/v1/ai-meeting`,{
       method:'POST',
       headers:{ 'Authorization':'Bearer '+_currentSession.access_token, 'Content-Type':'application/json' },
-      body:JSON.stringify({ transcript:fullText, title, participants })
+      body:JSON.stringify({ transcript:fullText, title, participants, people })
     });
     const result=await res.json();
     if(result.error) throw new Error(result.error);
@@ -1063,11 +1164,11 @@ async function generateAI(){
     // Salvar reunião no Supabase
     const date=document.getElementById('meeting-date').value;
     await saveMeeting(title, participants, date, fullText, result.ata||'', aiDemands);
-  } catch(e){ aiArea.innerHTML=`<div style="color:var(--red);font-size:12px;padding:8px">Erro: ${e.message}</div>`; toast('Erro ao gerar IA','error'); }
+  } catch(e){ aiArea.innerHTML=`<div style="color:var(--red);font-size:12px;padding:8px">Erro: ${esc(e.message)}</div>`; toast('Erro ao gerar IA','error'); }
 }
 
 function renderAIResults(ata, demands){
-  let html=`<div class="ai-section-label">ATA EXECUTIVA</div><div class="ai-ata">${ata}</div><div class="ai-section-label" style="margin-top:10px">DEMANDAS (${demands.length})</div>`;
+  let html=`<div class="ai-section-label">ATA EXECUTIVA</div><div class="ai-ata">${esc(ata)}</div><div class="ai-section-label" style="margin-top:10px">DEMANDAS (${demands.length})</div>`;
   demands.forEach((d,i)=>{
     const p=person(d.responsavel||'lucas');
     html+=`<div class="demand-item ${d.prioridade}" id="dem-${i}">
