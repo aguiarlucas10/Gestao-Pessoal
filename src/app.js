@@ -28,10 +28,6 @@ let ooSelected=null;
 let notifications=[], notifOpen=false;
 let currentView='board';
 
-// Recording
-let recInterval=null, recSeconds=0;
-let transcriptLines=[], aiDemands=[];
-
 // 1:1 local state (populated from Supabase on login)
 let oo11={};
 
@@ -43,9 +39,20 @@ let waPeriod='30d', waCategoryFilter='all', waNumberFilter='all';
 // ══════════════════════════════════════════════
 // UTILS
 // ══════════════════════════════════════════════
-function isoDate(d){ return d.toISOString().split('T')[0]; }
+// Data local (YYYY-MM-DD). toISOString() usaria UTC: depois das 21h em Brasília "hoje" virava amanhã.
+function isoDate(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
-function person(id){ return PEOPLE.find(p=>p.id===id)||PEOPLE[0]||{id:'?',name:'?',init:'?',role:'',color:'var(--t3)',bg:'var(--s2)',hidden:false}; }
+// Dias inteiros de a até b (strings ISO). Independe da hora do dia em que a página carregou.
+function daysBetween(a,b){ return Math.round((Date.parse(b+'T12:00:00Z')-Date.parse(a+'T12:00:00Z'))/864e5); }
+// "lucas" é o id histórico do próprio usuário (IA, defaults do banco), mas não está em PEOPLE.
+const ME_ID='lucas';
+const ME={id:ME_ID,name:'Eu',init:'EU',role:'',color:'var(--acc)',bg:'var(--acc-bg)',hidden:false};
+function person(id){
+  return PEOPLE.find(p=>p.id===id)
+    || (id===ME_ID ? ME : {id:id||'?',name:'Sem pessoa',init:'?',role:'',color:'var(--t3)',bg:'var(--s2)',hidden:false});
+}
+// Quem pode receber tarefa: você + o time (sem duplicar se "lucas" já estiver em PEOPLE)
+function assignablePeople(){ return PEOPLE.some(p=>p.id===ME_ID) ? PEOPLE : [ME,...PEOPLE]; }
 // Escape HTML-significant chars in user/AI content before innerHTML interpolation.
 // Used as defense against accidental markup injection (task titles, Whisper transcripts, GPT-4o output, person names).
 function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -59,7 +66,7 @@ const debouncedRenderBoard=debounce(()=>renderBoard(),150);
 const debouncedRenderPeople=debounce(()=>renderPeople(),150);
 function av(p,size=18){ return `<div class="av" style="width:${size}px;height:${size}px;background:${p.bg};color:${p.color};font-size:${Math.round(size*0.42)}px">${esc(p.init)}</div>`; }
 function formatDate(s){ if(!s) return '—'; const d=new Date(s+'T12:00:00'); return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}); }
-function isOverdue(s){ return s && new Date(s+'T23:59:59')<today && s!==isoToday; }
+function isOverdue(s){ return !!s && s<isoToday; }
 function isToday(s){ return s===isoToday; }
 
 // Toast with optional action button (e.g. undo). action: {label, cb} or null.
@@ -86,17 +93,54 @@ function toast(msg,type='success',action=null){
   setTimeout(()=>t.remove(),ttl);
 }
 
+// Ícones de interface (SVG traço 1.5, currentColor) — nada de glifo/emoji como ícone
+const ICON={
+  more:'<svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="3.5" cy="8" r="1.25" fill="currentColor"/><circle cx="8" cy="8" r="1.25" fill="currentColor"/><circle cx="12.5" cy="8" r="1.25" fill="currentColor"/></svg>',
+  x:'<svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/></svg>',
+  check:'<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  checkSm:'<svg width="7" height="7" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 5l2.5 2.5L8 3" stroke="var(--acc-on)" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  mic:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="6" y="1.5" width="4" height="8" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 8v.5a4.5 4.5 0 0 0 9 0V8M8 13v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  list:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="3" cy="4.5" r="1" fill="currentColor"/><circle cx="3" cy="8" r="1" fill="currentColor"/><circle cx="3" cy="11.5" r="1" fill="currentColor"/><path d="M6 4.5h7.5M6 8h7.5M6 11.5h7.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  clearFormat:'<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4 3h8M8 3l-2.5 10M3 13h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M10.5 9.5l3 3M13.5 9.5l-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+  meeting:'<svg class="empty-icon" width="32" height="32" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="3" width="10" height="11.5" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="5.5" y="1.5" width="5" height="3" rx="0.5" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8.5h5M5.5 11h3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'
+};
+
+// Status de sincronização no rodapé do menu (substitui o toast "Salvo" a cada gravação).
+// track(promessa do Supabase) → mesma resposta {data,error}, contando o que está pendente.
+let syncPending=0, syncFailed=false;
+function track(p){
+  syncPending++; renderSync();
+  return Promise.resolve(p).then(
+    res=>{ syncPending--; syncFailed=!!res?.error; renderSync(); return res; },
+    err=>{ syncPending--; syncFailed=true; renderSync(); return { error:err }; }
+  );
+}
+function renderSync(){
+  const dot=document.getElementById('sb-dot'), lbl=document.getElementById('sb-label');
+  if(!dot) return;
+  const st=!navigator.onLine?'err':syncPending?'saving':syncFailed?'err':'ok';
+  dot.className='status-dot '+st;
+  lbl.textContent=!navigator.onLine?'Sem conexão':st==='saving'?'Salvando…':st==='err'?'Falha ao salvar':'Tudo salvo';
+}
+window.addEventListener('online',renderSync);
+window.addEventListener('offline',renderSync);
+
+// Uma tarefa mudou: redesenha toda visão que mostra tarefas
+function onTasksChanged(){
+  renderBoard();
+  if(currentView==='calendar') renderCal();
+  if(currentView==='people') renderPeople();
+  if(currentView==='reunioes') refreshOpenMeeting();
+  if(currentView==='reunioes') renderMeetingsList();
+}
+
 // Close topmost open modal on Escape (a11y: dialogs must be dismissable via keyboard)
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   // Dynamic modals first (most recently opened)
   const dyn = document.getElementById('del-meeting-modal')
-           || document.getElementById('paste-modal')
-           || document.getElementById('edit-title-modal')
-           || document.getElementById('edit-ata-modal')
            || document.getElementById('cal-day-popup')
-           || document.getElementById('oo-person-modal')
-           || document.getElementById('new-meeting-modal');
+           || document.getElementById('oo-person-modal');
   if (dyn) { dyn.remove(); return; }
   if (document.getElementById('detail-overlay')?.classList.contains('open')) { closePanel(); return; }
   if (document.getElementById('task-modal')?.classList.contains('open')) { closeModal('task-modal'); return; }
@@ -149,6 +193,7 @@ sb.auth.onAuthStateChange((event, session)=>{
       setTimeout(async()=>{
         await loadOOState();
         await loadTasks();
+        await loadMeetingsIndex();
         await loadWA();
         scheduleNotifCheck();
         showBriefing();
@@ -181,13 +226,17 @@ async function loadTasks(){
 }
 
 function dbToTask(r){
-  return { id:r.id, title:r.title, person:r.person, dueDate:r.due_date, priority:r.priority, tipo:r.tipo, context:r.context||'', done:r.done, notes:r.notes||'', recurrence:r.recurrence||null };
+  return { id:r.id, title:r.title, person:r.person, dueDate:r.due_date, priority:r.priority, tipo:r.tipo, context:r.context||'', done:r.done, notes:r.notes||'', recurrence:r.recurrence||null,
+           originType:r.origin_type||null, originId:r.origin_id||null, createdAt:r.created_at||new Date().toISOString(), completedAt:r.completed_at||null,
+           lastFollowupAt:r.last_followup_at||null, followupCount:r.followup_count||0 };
 }
 
 async function sbUpsert(t){
   if(!_currentSession){ toast('Sessão expirada','error'); return; }
-  const row={ id:String(t.id), title:t.title, person:t.person, due_date:t.dueDate||null, priority:t.priority, tipo:t.tipo, context:t.context||'', done:t.done, notes:t.notes||'', recurrence:t.recurrence||null, owner_id:_currentSession.user.id };
-  const { error }=await sb.from('cmd_tasks').upsert(row,{onConflict:'id'});
+  // created_at / completed_at são do banco (trigger): nunca enviados daqui
+  const row={ id:String(t.id), title:t.title, person:t.person, due_date:t.dueDate||null, priority:t.priority, tipo:t.tipo, context:t.context||'', done:t.done, notes:t.notes||'', recurrence:t.recurrence||null,
+              origin_type:t.originType||'manual', origin_id:t.originId||null, last_followup_at:t.lastFollowupAt||null, followup_count:t.followupCount||0, owner_id:_currentSession.user.id };
+  const { error }=await track(sb.from('cmd_tasks').upsert(row,{onConflict:'id'}));
   if(error) toast('Erro ao salvar: '+error.message,'error');
 }
 
@@ -200,21 +249,8 @@ function nextRecurrenceDate(dueDate, recurrence){
 }
 
 async function sbDelete(id){
-  const { error }=await sb.from('cmd_tasks').delete().eq('id',String(id));
+  const { error }=await track(sb.from('cmd_tasks').delete().eq('id',String(id)));
   if(error) toast('Erro ao excluir: '+error.message,'error');
-}
-
-async function saveMeeting(title, participants, date, transcript, ata, demands){
-  if(!_currentSession){ toast('Sessão expirada','error'); return null; }
-  const { data: meeting, error }=await sb.from('cmd_meetings').insert({
-    title, participants, meeting_date:date||isoToday, transcript, ata, owner_id:_currentSession.user.id
-  }).select().single();
-  if(error){ toast('Erro ao salvar reunião','error'); return null; }
-  if(demands?.length && meeting){
-    const rows=demands.map(d=>({ meeting_id:meeting.id, task_id:null, title:d.titulo, person:d.responsavel||'lucas', priority:d.prioridade||'media', tipo:d.tipo||'delegada', owner_id:_currentSession.user.id }));
-    await sb.from('cmd_meeting_demands').insert(rows);
-  }
-  return meeting;
 }
 
 // ══════════════════════════════════════════════
@@ -234,7 +270,7 @@ function checkNotifications(){
     // Follow-up cadence (2→5→7 days) for delegated tasks
     if(t.tipo==='delegada'){
       const ref=t.dueDate||isoToday;
-      const days=Math.floor((today-new Date(ref+'T12:00:00'))/(1000*60*60*24));
+      const days=daysBetween(ref,isoToday);
       const p=person(t.person);
       if(days>=7){
         newNotifs.push({ id:'fu7-'+t.id, type:'alta', text:`⚠️ <strong>${esc(t.title)}</strong> — 7+ dias sem retorno de ${esc(p.name)}. Cobrar ou reavaliar.`, time:'Dia '+days, taskId:t.id, read:false });
@@ -265,8 +301,7 @@ function showBriefing(){
   const todayTasks=tasks.filter(t=>!t.done && isToday(t.dueDate));
   const upcoming=tasks.filter(t=>{
     if(!t.dueDate||t.done) return false;
-    const d=new Date(t.dueDate+'T12:00:00');
-    const diff=(d-today)/(1000*60*60*24);
+    const diff=daysBetween(isoToday,t.dueDate);
     return diff>0 && diff<=3;
   });
   const followups=tasks.filter(t=>{
@@ -275,8 +310,7 @@ function showBriefing(){
     return true;
   }).filter(t=>{
     const created=t._created||t.dueDate||isoToday;
-    const days=Math.floor((today-new Date(created+'T12:00:00'))/(1000*60*60*24));
-    return days>=2;
+    return daysBetween(created,isoToday)>=2;
   });
 
   document.getElementById('briefing-date').textContent=today.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).toUpperCase();
@@ -316,7 +350,7 @@ function showBriefing(){
     followups.slice(0,5).forEach(t=>{
       const p=person(t.person);
       const created=t._created||t.dueDate||isoToday;
-      const days=Math.floor((today-new Date(created+'T12:00:00'))/(1000*60*60*24));
+      const days=daysBetween(created,isoToday);
       html+=`<div class="briefing-item followup"><div style="flex:1"><div>${esc(t.title)}</div><div class="briefing-item-meta">Delegada a ${esc(p.name)} · ${days} dias sem update</div></div></div>`;
     });
     html+=`</div>`;
@@ -352,7 +386,7 @@ function clickNotif(nid, taskId){
   const n=notifications.find(x=>x.id===nid);
   if(n) n.read=true;
   renderNotifs();
-  if(taskId){ switchNav('board', document.querySelector('.nav-item')); openPanel(taskId); }
+  if(taskId){ navTo('board'); openPanel(taskId); }
   toggleNotifPanel();
 }
 
@@ -379,11 +413,15 @@ document.addEventListener('click', e=>{
 // ══════════════════════════════════════════════
 // NAV
 // ══════════════════════════════════════════════
-const NAV_TITLES={ board:'Tarefas', calendar:'Calendário', people:'Por Pessoa', transcription:'Transcrição', '11':'1:1s com o Time', reunioes:'Reuniões', whatsapp:'WhatsApp · Disparos Oficiais' };
+const NAV_TITLES={ board:'Tarefas', calendar:'Calendário', people:'Por Pessoa', '11':'1:1s com o Time', reunioes:'Reuniões', whatsapp:'WhatsApp · Disparos Oficiais' };
+
+function navTo(view){ switchNav(view, document.querySelector(`.nav-item[data-view="${view}"]`)); }
 
 function switchNav(view, el){
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
-  el.classList.add('active');
+  // Saindo de Reuniões: salva editores abertos e descarta rascunho vazio
+  if(currentView==='reunioes' && view!=='reunioes' && reunSelected) leaveMeeting(reunSelected);
+  document.querySelectorAll('.nav-item').forEach(n=>{ n.classList.remove('active'); n.removeAttribute('aria-current'); });
+  if(el){ el.classList.add('active'); el.setAttribute('aria-current','page'); }
   document.querySelectorAll('.view-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('view-'+view).classList.add('active');
   document.getElementById('topbar-title').textContent=NAV_TITLES[view];
@@ -393,6 +431,7 @@ function switchNav(view, el){
   if(view==='11') renderOneOne();
   if(view==='reunioes') renderMeetingsList();
   if(view==='whatsapp') renderWhatsApp();
+  renderRecUI();
   // Close mobile nav
   if(window.innerWidth<=768){ document.getElementById('main-nav').classList.remove('open'); document.getElementById('nav-overlay').classList.remove('open'); }
 }
@@ -420,7 +459,7 @@ const COL_CONFIG=[
 
 function getCol(dueDate){
   if(!dueDate) return 'depois';
-  const diff=Math.ceil((new Date(dueDate+'T12:00:00')-today)/86400000);
+  const diff=daysBetween(isoToday,dueDate);
   if(diff<0) return 'atrasadas';
   if(diff===0) return 'hoje';
   if(diff<=2) return 'proximos';
@@ -469,7 +508,7 @@ function renderBoard(){
 function followupBadge(t){
   if(t.tipo!=='delegada'||t.done) return '';
   const ref=t.dueDate||isoToday;
-  const days=Math.floor((today-new Date(ref+'T12:00:00'))/(1000*60*60*24));
+  const days=daysBetween(ref,isoToday);
   if(days>=7) return `<span class="tag" style="background:var(--rust-bg);color:var(--rust);font-size:9px;font-weight:600">Dia ${days}</span>`;
   if(days>=5) return `<span class="tag" style="background:var(--org2);color:var(--org);font-size:9px">Dia ${days}</span>`;
   if(days>=2) return `<span class="tag" style="background:var(--acc2);color:var(--acc);font-size:9px">Dia ${days}</span>`;
@@ -488,7 +527,7 @@ function cardHTML(t){
       </div>
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority==='alta'?'▲':t.priority==='media'?'●':'▼'} ${t.priority.toUpperCase()}</span>
-        ${t.context?`<span class="tag origem">${esc(t.context)}</span>`:''}
+        ${originLabel(t)?`<span class="tag origem">${esc(originLabel(t))}</span>`:''}
         <span class="tag dt ${over?'overdue':tod?'overdue':''}">${formatDate(t.dueDate)}</span>
         ${fub}
         ${t.recurrence?`<span class="tag" style="background:var(--moss-bg);color:var(--moss);font-size:9px">↻ ${t.recurrence==='daily'?'Diária':t.recurrence==='weekly'?'Semanal':'Mensal'}</span>`:''}
@@ -512,7 +551,8 @@ function cardDoneHTML(t){
 async function toggleDone(id){
   const t=tasks.find(t=>t.id===id); if(!t) return;
   t.done=!t.done;
-  renderBoard(); if(currentView==='calendar') renderCal(); if(currentView==='people') renderPeople();
+  t.completedAt=t.done?new Date().toISOString():null;
+  onTasksChanged();
   await sbUpsert(t);
   if(t.done){
     toast('Tarefa concluída ✓');
@@ -521,7 +561,7 @@ async function toggleDone(id){
       const next={ id:crypto.randomUUID(), title:t.title, person:t.person, dueDate:nextRecurrenceDate(t.dueDate,t.recurrence), priority:t.priority, tipo:t.tipo, context:t.context, done:false, notes:'', recurrence:t.recurrence };
       tasks.unshift(next);
       await sbUpsert(next);
-      renderBoard(); if(currentView==='calendar') renderCal();
+      onTasksChanged();
       toast(`Próxima ocorrência: ${formatDate(next.dueDate)}`);
     }
   }
@@ -549,10 +589,12 @@ function openPanel(id){
       </div>
     </div>
     <div class="sp-field"><span class="sp-label" id="sp-resp-label-${id}">Responsável</span>
-      <div class="assign-wrap" role="group" aria-labelledby="sp-resp-label-${id}">${PEOPLE.map(p=>`<button class="asbtn ${t.person===p.id?'sel':''}" aria-pressed="${t.person===p.id}" onclick="updateField('${id}','person','${p.id}')">${av(p,14)} ${esc(p.name)}</button>`).join('')}</div>
+      <div class="assign-wrap" role="group" aria-labelledby="sp-resp-label-${id}">${assignablePeople().map(p=>`<button class="asbtn ${t.person===p.id?'sel':''}" aria-pressed="${t.person===p.id}" onclick="updateField('${id}','person','${esc(p.id)}')">${av(p,14)} ${esc(p.name)}</button>`).join('')}</div>
     </div>
     <label class="sp-field"><span class="sp-label">Data do Prazo</span><input type="date" class="date-input" value="${t.dueDate||''}" onchange="updateField('${id}','dueDate',this.value)"></label>
-    <label class="sp-field"><span class="sp-label">Origem / Reunião</span><input class="date-input" value="${esc(t.context||'')}" placeholder="Ex: 1:1 Junior" onblur="updateField('${id}','context',this.value)" style="font-family:var(--font-body)"></label>
+    ${t.originId && meetingById(t.originId)
+      ? `<div class="sp-field"><span class="sp-label">Origem</span><button type="button" class="sp-origin" onclick="openMeeting('${t.originId}')">${ICON.meeting.replace('class="empty-icon" width="32" height="32"','width="14" height="14"')}<span>${esc(originLabel(t))}</span><span class="sp-origin-go">Abrir reunião</span></button></div>`
+      : `<label class="sp-field"><span class="sp-label">Origem / Reunião</span><input class="date-input" value="${esc(t.context||'')}" placeholder="Ex: 1:1 Junior" onblur="updateField('${id}','context',this.value)" style="font-family:var(--font-body)"></label>`}
     ${t.recurrence?`<label class="sp-field"><span class="sp-label">Recorrência</span><select class="date-input" onchange="updateField('${id}','recurrence',this.value||null)"><option value="">Nenhuma</option><option value="daily" ${t.recurrence==='daily'?'selected':''}>Diária</option><option value="weekly" ${t.recurrence==='weekly'?'selected':''}>Semanal</option><option value="monthly" ${t.recurrence==='monthly'?'selected':''}>Mensal</option></select></label>`:''}
     <label class="sp-field"><span class="sp-label">Notas</span><textarea class="sp-notes" placeholder="Próximos passos..." onblur="updateField('${id}','notes',this.value)">${esc(t.notes||'')}</textarea></label>
     <button class="sp-del" onclick="deleteTask('${id}')">Excluir tarefa</button>
@@ -564,14 +606,14 @@ function closePanel(){ document.getElementById('detail-overlay').classList.remov
 async function updateField(id, field, val){
   const t=tasks.find(t=>t.id===id); if(!t) return;
   t[field]=val;
-  renderBoard(); if(currentView==='calendar') renderCal(); if(currentView==='people') renderPeople();
+  onTasksChanged();
   openPanel(id);
   await sbUpsert(t);
 }
 
 async function deleteTask(id){
   tasks=tasks.filter(t=>t.id!==id);
-  closePanel(); renderBoard(); updateBadge();
+  closePanel(); onTasksChanged();
   await sbDelete(id);
   toast('Tarefa excluída');
 }
@@ -627,8 +669,14 @@ function personGroupHTML(label,kind,items){
 }
 function renderPeople(){
   const wrap=document.getElementById('people-board'); wrap.innerHTML='';
-  PEOPLE.forEach((p,idx)=>{
-    let pt=tasks.filter(t=>t.person===p.id&&!t.done);
+  // Colunas do time (arrastáveis) + "Eu" e "Sem pessoa" só quando houver tarefas — senão essas tarefas sumiam desta visão
+  const known=new Set(PEOPLE.map(p=>p.id));
+  const cols=PEOPLE.map((p,idx)=>({ p, idx, owns:t=>t.person===p.id }));
+  if(!known.has(ME_ID) && tasks.some(t=>t.person===ME_ID)) cols.push({ p:ME, idx:null, owns:t=>t.person===ME_ID });
+  const isOrphan=t=>!known.has(t.person) && t.person!==ME_ID;
+  if(tasks.some(t=>!t.done && isOrphan(t))) cols.push({ p:person(null), idx:null, owns:isOrphan, orphan:true });
+  cols.forEach(({p,idx,owns,orphan})=>{
+    let pt=tasks.filter(t=>owns(t)&&!t.done);
     if(peopleFilter==='alta') pt=pt.filter(t=>t.priority==='alta');
     if(peopleFilter==='media') pt=pt.filter(t=>t.priority==='media');
     if(peopleFilter==='baixa') pt=pt.filter(t=>t.priority==='baixa');
@@ -643,31 +691,36 @@ function renderPeople(){
       bodyHTML+=personGroupHTML('Esta semana','semana',g.semana);
       bodyHTML+=personGroupHTML('Em breve','breve',g.breve);
     }
-    const done=tasks.filter(t=>t.person===p.id&&t.done);
+    const done=orphan?[]:tasks.filter(t=>owns(t)&&t.done);
     const col=document.createElement('div'); col.className='person-col';
-    col.draggable=true;
-    col.dataset.idx=idx;
-    col.addEventListener('dragstart',e=>{ peopleDragIdx=idx; col.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
-    col.addEventListener('dragend',()=>{ col.classList.remove('dragging'); document.querySelectorAll('.drag-over-col').forEach(el=>el.classList.remove('drag-over-col')); });
-    col.addEventListener('dragover',e=>{ e.preventDefault(); col.classList.add('drag-over-col'); });
-    col.addEventListener('dragleave',()=>col.classList.remove('drag-over-col'));
-    col.addEventListener('drop',e=>{
-      e.preventDefault(); col.classList.remove('drag-over-col');
-      if(peopleDragIdx===null||peopleDragIdx===idx) return;
-      const [moved]=PEOPLE.splice(peopleDragIdx,1);
-      PEOPLE.splice(idx,0,moved);
-      peopleDragIdx=null;
-      saveOOState();
-      renderPeople();
-    });
-    col.innerHTML=`
-      <div class="person-col-head" style="cursor:grab"><div class="big-av" style="background:${p.bg};color:${p.color}">${p.init}</div>
-        <div style="flex:1;min-width:0"><div class="person-col-name">${esc(p.name)}</div><div class="person-col-sub">${esc(p.role)}</div></div>
-        <div class="col-ct">${pt.length}</div>
-      </div>
-      <button class="col-add" onclick="openTaskModal(null,'${p.id}')" aria-label="Adicionar tarefa para ${esc(p.name)}">
+    const draggable=idx!==null;
+    if(draggable){
+      col.draggable=true;
+      col.dataset.idx=idx;
+      col.addEventListener('dragstart',e=>{ peopleDragIdx=idx; col.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
+      col.addEventListener('dragend',()=>{ col.classList.remove('dragging'); document.querySelectorAll('.drag-over-col').forEach(el=>el.classList.remove('drag-over-col')); });
+      col.addEventListener('dragover',e=>{ e.preventDefault(); col.classList.add('drag-over-col'); });
+      col.addEventListener('dragleave',()=>col.classList.remove('drag-over-col'));
+      col.addEventListener('drop',e=>{
+        e.preventDefault(); col.classList.remove('drag-over-col');
+        if(peopleDragIdx===null||peopleDragIdx===idx) return;
+        const [moved]=PEOPLE.splice(peopleDragIdx,1);
+        PEOPLE.splice(idx,0,moved);
+        peopleDragIdx=null;
+        saveOOState();
+        renderPeople();
+      });
+    }
+    const sub=orphan?'Pessoa removida ou desconhecida — abra a tarefa para reatribuir':p.role;
+    const addBtn=orphan?'':`
+      <button class="col-add" onclick="openTaskModal(null,'${esc(p.id)}')" aria-label="Adicionar tarefa para ${esc(p.name)}">
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg> Adicionar
-      </button>
+      </button>`;
+    col.innerHTML=`
+      <div class="person-col-head"${draggable?' style="cursor:grab"':''}><div class="big-av" style="background:${p.bg};color:${p.color}">${esc(p.init)}</div>
+        <div style="flex:1;min-width:0"><div class="person-col-name">${esc(p.name)}</div><div class="person-col-sub">${esc(sub)}</div></div>
+        <div class="col-ct">${pt.length}</div>
+      </div>${addBtn}
       <div class="person-col-body">
         ${bodyHTML || `<div class="col-empty">Nada por aqui ainda.</div>`}
         ${done.length?`<div class="done-sep">✓ Concluídas (${done.length})</div>${done.slice(0,2).map(cardDoneHTML).join('')}`:''}
@@ -687,7 +740,7 @@ function personCardHTML(t){
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority.toUpperCase()}</span>
         <span class="tag dt ${over||tod?'overdue':''}">${formatDate(t.dueDate)}</span>
-        ${t.context?`<span class="tag origem">${esc(t.context)}</span>`:''}
+        ${originLabel(t)?`<span class="tag origem">${esc(originLabel(t))}</span>`:''}
       </div>
     </div>`;
 }
@@ -764,7 +817,7 @@ function openCalDayPopup(dateStr, dayNum){
       </div>
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority==='alta'?'▲':t.priority==='media'?'●':'▼'} ${t.priority.toUpperCase()}</span>
-        ${t.context?`<span class="tag origem">${esc(t.context)}</span>`:''}
+        ${originLabel(t)?`<span class="tag origem">${esc(originLabel(t))}</span>`:''}
       </div>
       <div class="card-foot"><div class="card-person">${av(p,16)} ${esc(p.name)}</div></div>
     </div>`;
@@ -810,9 +863,9 @@ function openTaskModal(_, personHint, dateHint){
   const delBtn=document.querySelector('#task-modal .tbtn.delegada'); delBtn.classList.add('sel'); delBtn.setAttribute('aria-pressed','true');
   // Update person select from PEOPLE
   const sel=document.getElementById('m-person');
-  sel.innerHTML=PEOPLE.map(p=>`<option value="${p.id}">${esc(p.name)}${p.id==='lucas'?' (você)':''}</option>`).join('');
+  sel.innerHTML=assignablePeople().map(p=>`<option value="${esc(p.id)}">${esc(p.name)}${p.id===ME_ID&&p!==ME?' (você)':''}</option>`).join('');
   document.getElementById('m-recurrence').value='';
-  if(personHint) sel.value=personHint;
+  sel.value=personHint || (PEOPLE.find(p=>p.id!==ME_ID)||ME).id;
   if(dateHint) document.getElementById('m-date').value=dateHint;
   else document.getElementById('m-date').value=isoToday;
   openModal('task-modal');
@@ -834,365 +887,10 @@ async function addTask(){
   tasks.unshift(t);
   closeModal('task-modal');
   document.getElementById('m-title').value=''; document.getElementById('m-context').value='';
-  renderBoard(); if(currentView==='calendar') renderCal(); if(currentView==='people') renderPeople();
+  onTasksChanged();
   toast('Tarefa criada');
   await sbUpsert(t);
   checkNotifications();
-}
-
-// ══════════════════════════════════════════════
-// TRANSCRIPTION (via Edge Function — sem key exposta)
-// ══════════════════════════════════════════════
-// Dois gravadores em paralelo sobre o mesmo microfone:
-//  · live  → trechos curtos (20–40s) só para o texto aparecer durante a reunião
-//  · final → trechos longos (4–6min) retranscritos ao parar, com contexto do trecho anterior
-// Os cortes acontecem numa pausa de fala (detectada pelo volume), não no meio de palavra.
-const LIVE_SEG={ min:20000, max:40000 };
-const FINAL_SEG={ min:240000, max:360000 };
-const SILENCE_RMS=0.015, SILENCE_MS=350;
-
-let recStream2=null, isRecording=false;
-let liveSeg=null, finalSeg=null;
-let finalSegments=[], finalParts=[];  // blobs do gravador final e seus textos (null = falhou)
-let finalQueue=Promise.resolve(), finalLastErr='';
-let liveQueue=Promise.resolve();      // garante ordem e contexto das transcrições ao vivo
-let liveFailures=0, lastLiveValue='';
-let audioCtx=null, vadTimer=null, silentMs=0;
-let recMimeType='audio/webm';
-let finalizing=false;
-
-function getTransText(){ return document.getElementById('trans-text'); }
-function getTranscriptContent(){ return getTransText().value.trim(); }
-function updateWordCount(){
-  const text=getTranscriptContent();
-  const words=text?text.split(/\s+/).length:0;
-  const el=document.getElementById('trans-word-count');
-  if(el) el.textContent=words+' palavras';
-}
-
-function showTransTextarea(){
-  document.getElementById('transcript-empty').style.display='none';
-  const ta=getTransText();
-  ta.style.display='block';
-}
-
-function pickMimeType(){
-  return ['audio/webm;codecs=opus','audio/webm','audio/mp4'].find(t=>MediaRecorder.isTypeSupported(t))||'';
-}
-function audioFileName(){ return recMimeType.startsWith('audio/mp4')?'audio.m4a':'audio.webm'; }
-
-// Nomes que o modelo de transcrição deve reconhecer: time + participantes digitados
-function transcribeKeywords(){
-  const typed=(document.getElementById('meeting-people').value||'').split(/[,;]/);
-  return [...PEOPLE.map(p=>p.name), ...typed].map(s=>s.trim()).filter(Boolean);
-}
-
-async function transcribeBlob(blob, context){
-  if(!_currentSession) throw new Error('Sessão expirada');
-  const fd=new FormData();
-  fd.append('file',blob,audioFileName());
-  if(context) fd.append('context',context.slice(-800));
-  transcribeKeywords().forEach(k=>fd.append('keywords[]',k));
-  const res=await fetch(`${SB_URL}/functions/v1/transcribe`,{
-    method:'POST',
-    headers:{ 'Authorization':'Bearer '+_currentSession.access_token },
-    body:fd
-  });
-  const data=await res.json().catch(()=>({}));
-  if(!res.ok) throw new Error(data.error||('HTTP '+res.status));
-  return (data.text||'').trim();
-}
-
-// Gravador segmentado: corta em pausa de fala entre min e max ms; força o corte em max
-function createSegmenter(cfg, onBlob){
-  let rec=null, startedAt=0, pending=0, idle=null;
-  const begin=()=>{
-    const chunks=[];
-    const r=new MediaRecorder(recStream2,{mimeType:recMimeType,audioBitsPerSecond:48000});
-    r.ondataavailable=e=>{ if(e.data.size>0) chunks.push(e.data); };
-    pending++;
-    r.onstop=()=>{
-      if(chunks.length) onBlob(new Blob(chunks,{type:recMimeType}));
-      pending--;
-      if(!pending && idle) idle();
-    };
-    r.start();
-    rec=r; startedAt=Date.now();
-  };
-  const cut=()=>{ const old=rec; begin(); if(old.state!=='inactive') old.stop(); };
-  return {
-    start:begin,
-    tick(){
-      const age=Date.now()-startedAt;
-      if(age>=cfg.max || (age>=cfg.min && silentMs>=SILENCE_MS)) cut();
-    },
-    stop(){
-      return new Promise(resolve=>{
-        idle=resolve;
-        if(rec && rec.state!=='inactive') rec.stop();
-        if(!pending) resolve();
-      });
-    }
-  };
-}
-
-function startVAD(){
-  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  const analyser=audioCtx.createAnalyser();
-  analyser.fftSize=2048;
-  audioCtx.createMediaStreamSource(recStream2).connect(analyser);
-  const buf=new Float32Array(analyser.fftSize);
-  silentMs=0;
-  vadTimer=setInterval(()=>{
-    analyser.getFloatTimeDomainData(buf);
-    let sum=0; for(const v of buf) sum+=v*v;
-    silentMs=Math.sqrt(sum/buf.length)<SILENCE_RMS ? silentMs+100 : 0;
-    liveSeg?.tick(); finalSeg?.tick();
-  },100);
-}
-
-function stopVAD(){
-  if(vadTimer){ clearInterval(vadTimer); vadTimer=null; }
-  if(audioCtx){ audioCtx.close().catch(()=>{}); audioCtx=null; }
-}
-
-function onLiveBlob(blob){
-  if(blob.size<1000) return;
-  liveQueue=liveQueue.then(async()=>{
-    const liveEl=document.getElementById('trans-live-text');
-    if(liveEl && isRecording) liveEl.textContent='Transcrevendo...';
-    try {
-      const ta=getTransText();
-      const text=await transcribeBlob(blob, ta.value);
-      if(text){
-        const sep=ta.value && !/[\s]$/.test(ta.value)?' ':'';
-        ta.value+=sep+text;
-        ta.scrollTop=ta.scrollHeight;
-        lastLiveValue=ta.value;
-        updateWordCount();
-        transcriptLines=[{id:'full',time:'',text:ta.value}];
-      }
-    } catch(e){
-      liveFailures++;
-      if(liveFailures===1) toast('Falha na transcrição ao vivo: '+esc(e.message)+'. O áudio continua sendo gravado e será transcrito ao parar.','error');
-    } finally {
-      if(liveEl && isRecording) liveEl.textContent=liveFailures?`Ouvindo... (${liveFailures} trecho(s) com falha ao vivo)`:'Ouvindo...';
-    }
-  });
-}
-
-async function toggleRecording(){
-  if(finalizing) return;
-  const btn=document.getElementById('rec-btn');
-  if(!isRecording){
-    try {
-      // Sem cancelamento de eco: em reunião online ele apagaria as vozes que saem do alto-falante
-      recStream2=await navigator.mediaDevices.getUserMedia({audio:{
-        echoCancellation:false, noiseSuppression:false, autoGainControl:true, channelCount:1
-      }});
-      recMimeType=pickMimeType();
-      finalSegments=[]; finalParts=[]; finalQueue=Promise.resolve(); finalLastErr='';
-      liveFailures=0; liveQueue=Promise.resolve();
-      isRecording=true;
-
-      liveSeg=createSegmenter(LIVE_SEG, onLiveBlob);
-      finalSeg=createSegmenter(FINAL_SEG, onFinalBlob);
-      liveSeg.start(); finalSeg.start();
-      startVAD();
-
-      showTransTextarea();
-      getTransText().value=''; lastLiveValue='';
-      btn.className='rec-btn recording';
-      document.getElementById('rec-label').textContent='Parar Gravação';
-      document.getElementById('rec-timer').style.display='block';
-      document.getElementById('trans-live-bar').style.display='flex';
-      const liveEl=document.getElementById('trans-live-text');
-      if(liveEl) liveEl.textContent='Ouvindo...';
-      startTimer();
-      toast('Gravando — o texto aparece a cada pausa de fala');
-    } catch(e){ toast('Microfone bloqueado: '+esc(e.message),'error'); }
-  } else {
-    btn.className='rec-btn idle';
-    document.getElementById('rec-label').textContent='Iniciar Gravação';
-    document.getElementById('rec-timer').style.display='none';
-    clearInterval(recInterval);
-    const liveEl=document.getElementById('trans-live-text');
-    if(liveEl) liveEl.textContent='Finalizando gravação...';
-    await stopRec();
-    document.getElementById('trans-live-bar').style.display='none';
-    updateWordCount();
-    await finalizeTranscript({auto:true});
-  }
-}
-
-function startTimer(){
-  recSeconds=0;
-  recInterval=setInterval(()=>{
-    recSeconds++;
-    const m=Math.floor(recSeconds/60).toString().padStart(2,'0');
-    const s=(recSeconds%60).toString().padStart(2,'0');
-    document.getElementById('rec-timer').textContent=`${m}:${s}`;
-  },1000);
-}
-
-async function stopRec(){
-  isRecording=false;
-  stopVAD();
-  const pending=[liveSeg?.stop(), finalSeg?.stop()];
-  liveSeg=null; finalSeg=null;
-  await Promise.all(pending);   // último trecho de cada gravador já entregue
-  if(recStream2){ recStream2.getTracks().forEach(t=>t.stop()); recStream2=null; }
-  await liveQueue;
-}
-
-// Transcrição definitiva: cada trecho longo entra na fila assim que fecha (ainda durante a
-// reunião), em ordem, com o final do trecho anterior como contexto
-function queueFinalSegment(i){
-  finalQueue=finalQueue.then(async()=>{
-    try { finalParts[i]=await transcribeBlob(finalSegments[i], finalParts.slice(0,i).filter(Boolean).join(' ')); }
-    catch(e){ finalParts[i]=null; finalLastErr=e.message; }
-  });
-}
-function onFinalBlob(blob){
-  if(blob.size<1000) return;
-  finalSegments.push(blob);
-  queueFinalSegment(finalSegments.length-1);
-}
-
-async function finalizeTranscript({auto=false}={}){
-  if(!finalSegments.length){ if(!auto) toast('Nenhum áudio gravado para transcrever','error'); return; }
-  const ta=getTransText();
-  const before=ta.value;
-  const userEdited=auto && before!==lastLiveValue;
-  if(!auto){ finalParts=[]; finalLastErr=''; finalSegments.forEach((_,i)=>queueFinalSegment(i)); }
-  finalizing=true;
-  ta.disabled=true;
-  const total=finalSegments.length;
-  const progress=()=>{ ta.value=`Finalizando a transcrição completa (${finalParts.filter(p=>p!==undefined).length}/${total} trechos)...`; };
-  progress();
-  const progTimer=setInterval(progress,500);
-  try { await finalQueue; }
-  finally { clearInterval(progTimer); ta.disabled=false; finalizing=false; }
-
-  const failed=finalParts.filter(p=>p===null).length;
-  const finalText=finalParts.filter(Boolean).join(' ');
-  if(failed || !finalText){
-    ta.value=before;
-    toast(`Transcrição final falhou em ${failed||total} de ${total} trecho(s)${finalLastErr?': '+esc(finalLastErr):''}. Mantive o texto ao vivo — use "Refazer transcrição".`,'error');
-    return;
-  }
-  const apply=()=>{
-    ta.value=finalText; lastLiveValue=finalText;
-    transcriptLines=[{id:'full',time:'',text:finalText}];
-    updateWordCount();
-  };
-  if(userEdited){
-    ta.value=before;
-    toast('Transcrição final pronta, mas você editou o texto ao vivo. Substituir? (Ou depois em "Refazer transcrição".)','info',{label:'Substituir',cb:apply});
-    return;
-  }
-  apply();
-  toast(auto?'Transcrição final pronta — revise e clique em Gerar com IA':'Transcrição refeita');
-}
-
-function refineTranscript(){
-  if(isRecording||finalizing){ toast('Aguarde a gravação terminar','error'); return; }
-  return finalizeTranscript({auto:false});
-}
-
-function clearTranscript(){
-  const ta=getTransText();
-  ta.value=''; ta.style.display='none';
-  document.getElementById('transcript-empty').style.display='flex';
-  document.getElementById('trans-live-bar').style.display='none';
-  transcriptLines=[]; aiDemands=[]; finalSegments=[]; finalParts=[]; lastLiveValue='';
-  updateWordCount();
-  document.getElementById('trans-ai-area').innerHTML=`<div style="color:var(--t4);font-size:12px;line-height:1.7">Após gravar ou colar o transcript, clique em <strong style="color:var(--t2)">Gerar com IA</strong>.</div>`;
-}
-
-function pasteMode(){
-  // Modal com textarea (substitui prompt nativo)
-  document.body.insertAdjacentHTML('beforeend',`
-    <div class="oo-modal-overlay" id="paste-modal" onclick="if(event.target===this)this.remove()">
-      <div class="oo-modal" onclick="event.stopPropagation()" style="width:560px;max-width:92vw" role="dialog" aria-modal="true" aria-labelledby="paste-modal-title">
-        <h3 id="paste-modal-title">Colar transcrição</h3>
-        <label for="paste-area" style="font-size:11px;color:var(--t3);font-family:var(--font-mono);letter-spacing:.05em;text-transform:uppercase">Texto da reunião</label>
-        <textarea id="paste-area" class="oo-note-area" style="min-height:240px;font-size:13px" placeholder="Cole aqui o texto…" autofocus></textarea>
-        <div class="oo-modal-btns">
-          <button class="btn-sm" type="button" onclick="document.getElementById('paste-modal').remove()">Cancelar</button>
-          <button class="btn-sm primary" type="button" id="paste-confirm">Importar</button>
-        </div>
-      </div>
-    </div>`);
-  const modal=document.getElementById('paste-modal');
-  const ta=modal.querySelector('#paste-area');
-  setTimeout(()=>ta.focus(),50);
-  modal.querySelector('#paste-confirm').addEventListener('click',()=>{
-    const txt=ta.value.trim();
-    if(!txt){ modal.remove(); return; }
-    modal.remove();
-    showTransTextarea();
-    const transTa=getTransText();
-    transTa.value=txt;
-    transcriptLines=[{id:'full',time:'',text:txt}];
-    finalSegments=[]; finalParts=[];   // texto colado não tem áudio para refazer
-    updateWordCount();
-    toast('Transcrição importada');
-  });
-}
-
-async function generateAI(){
-  const fullText=getTranscriptContent();
-  if(!fullText){ toast('Nenhum transcript disponível','error'); return; }
-  const title=document.getElementById('meeting-title').value||'Reunião';
-  const participants=document.getElementById('meeting-people').value||'time';
-  const aiArea=document.getElementById('trans-ai-area');
-  aiArea.innerHTML=`<div class="ai-loading"><div class="spinner"></div> Gerando ata e demandas com IA...</div>`;
-  try {
-    if(!_currentSession){ toast('Sessão expirada','error'); return; }
-    const people=PEOPLE.map(p=>({ id:p.id, name:p.name, role:p.role||'' }));
-    const res=await fetch(`${SB_URL}/functions/v1/ai-meeting`,{
-      method:'POST',
-      headers:{ 'Authorization':'Bearer '+_currentSession.access_token, 'Content-Type':'application/json' },
-      body:JSON.stringify({ transcript:fullText, title, participants, people })
-    });
-    const result=await res.json();
-    if(result.error) throw new Error(result.error);
-    aiDemands=result.demandas||[];
-    renderAIResults(result.ata||'', aiDemands);
-    toast('IA gerou ata e '+aiDemands.length+' demandas');
-    // Salvar reunião no Supabase
-    const date=document.getElementById('meeting-date').value;
-    await saveMeeting(title, participants, date, fullText, result.ata||'', aiDemands);
-  } catch(e){ aiArea.innerHTML=`<div style="color:var(--red);font-size:12px;padding:8px">Erro: ${esc(e.message)}</div>`; toast('Erro ao gerar IA','error'); }
-}
-
-function renderAIResults(ata, demands){
-  let html=`<div class="ai-section-label">ATA EXECUTIVA</div><div class="ai-ata">${esc(ata)}</div><div class="ai-section-label" style="margin-top:10px">DEMANDAS (${demands.length})</div>`;
-  demands.forEach((d,i)=>{
-    const p=person(d.responsavel||'lucas');
-    html+=`<div class="demand-item ${d.prioridade}" id="dem-${i}">
-      <div style="flex:1"><div class="demand-text">${esc(d.titulo)}</div><div class="demand-meta"><span class="tag ${d.prioridade}">${d.prioridade.toUpperCase()}</span><span class="tag ${d.tipo}">${d.tipo==='minha'?'Eu faço':'Delegada'}</span>${av(p,14)}<span style="font-size:11px;color:var(--t2)">${esc(p.name)}</span></div></div>
-      <button class="demand-check" id="dchk-${i}" aria-label="Marcar demanda" onclick="toggleDemand(${i})"></button>
-    </div>`;
-  });
-  document.getElementById('trans-ai-area').innerHTML=html;
-}
-
-function toggleDemand(i){ const c=document.getElementById('dchk-'+i); c.classList.toggle('checked'); const on=c.classList.contains('checked'); c.innerHTML=on?`<svg width="7" height="7" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="var(--acc-on)" stroke-width="1.5" stroke-linecap="round"/></svg>`:''; aiDemands[i]._skip=!on; }
-
-async function addDemandsToBoard(){
-  if(!aiDemands.length){ toast('Nenhuma demanda gerada','error'); return; }
-  const meeting=document.getElementById('meeting-title').value||'Reunião';
-  const date=document.getElementById('meeting-date').value||isoToday;
-  let added=0;
-  for(const d of aiDemands){
-    if(d._skip) continue;
-    const t={ id:crypto.randomUUID(), title:d.titulo, person:d.responsavel||'lucas', dueDate:date, priority:d.prioridade||'media', tipo:d.tipo||'delegada', context:meeting, done:false, notes:'' };
-    tasks.unshift(t); added++;
-    await sbUpsert(t);
-  }
-  renderBoard(); toast(added+' demandas enviadas ao board ✓'); checkNotifications();
 }
 
 // ══════════════════════════════════════════════
@@ -1207,11 +905,12 @@ function saveOOLocal(){
   localStorage.setItem('oo_data',JSON.stringify(oo11));
 }
 
-async function saveOOState(){
+function saveOOState(){ return track(saveOOStateNow()); }
+async function saveOOStateNow(){
   saveOOLocal();
   try {
     const session=_currentSession;
-    if(!session){ console.error('saveOO: NO SESSION'); toast('Sessão expirada — faça login novamente','error'); return; }
+    if(!session){ toast('Sessão expirada — faça login novamente','error'); return { error:'no-session' }; }
     const payload={ people:PEOPLE, oo_data:oo11, updated_at:new Date().toISOString() };
     const headers={ 'Content-Type':'application/json', 'apikey':SB_ANON, 'Authorization':'Bearer '+session.access_token, 'Prefer':'return=minimal' };
     // Try PATCH (update existing row) first
@@ -1236,11 +935,11 @@ async function saveOOState(){
     if(!res.ok){
       const err=await res.text();
       console.error('saveOO HTTP',res.status,err);
-      toast('Erro ao salvar: '+res.status,'error');
-    } else {
-      toast('Salvo no Supabase');
+      toast('Não foi possível salvar os dados do 1:1 (erro '+res.status+'). Tente de novo.','error');
+      return { error:res.status };
     }
-  } catch(e){ console.error('saveOO catch:',e); toast('Erro ao salvar','error'); }
+    return {};
+  } catch(e){ console.error('saveOO catch:',e); toast('Não foi possível salvar os dados do 1:1. Verifique a conexão.','error'); return { error:e }; }
 }
 
 function loadOOFromLocal(){
@@ -1375,7 +1074,7 @@ function toggleHidePerson(pid){
 
 function renderOneOne(){
   const wrap=document.getElementById('oo-items');
-  const visible=PEOPLE.filter(p=>p.id!=='lucas'&&(!p.hidden||ooShowHidden));
+  const visible=PEOPLE.filter(p=>p.id!==ME_ID&&(!p.hidden||ooShowHidden));
   wrap.innerHTML=visible.map((pp,idx)=>{
     const pid=pp.id, data=oo11[pid];
     const pend=data?data.actions.filter(a=>!a.done).length:0;
@@ -1402,7 +1101,7 @@ function ooDragEnd(e){ e.currentTarget.classList.remove('dragging'); document.qu
 function ooDrop(e,toIdx){
   e.preventDefault(); e.currentTarget.classList.remove('drag-over');
   if(ooDragIdx===null||ooDragIdx===toIdx) return;
-  const visible=PEOPLE.filter(p=>p.id!=='lucas'&&(!p.hidden||ooShowHidden));
+  const visible=PEOPLE.filter(p=>p.id!==ME_ID&&(!p.hidden||ooShowHidden));
   const fromPid=visible[ooDragIdx]?.id, toPid=visible[toIdx]?.id;
   if(!fromPid||!toPid) return;
   const fi=PEOPLE.findIndex(p=>p.id===fromPid), ti=PEOPLE.findIndex(p=>p.id===toPid);
@@ -1420,7 +1119,7 @@ function selectOO(pid){
     <div class="oo-head">
       <div style="display:flex;align-items:center;gap:12px">${av(p,40)}<div><div class="oo-head-name">1:1 com ${esc(p.name)}</div><div class="oo-head-role">${esc(p.role)}</div></div></div>
       <div class="oo-head-btns">
-        <button class="btn-sm" onclick="switchNav('transcription',document.querySelectorAll('.nav-item')[3])">Transcrever reunião</button>
+        <button class="btn-sm" onclick="recordOneOnOne('${pid}')">Gravar 1:1</button>
         <button class="btn-sm primary" onclick="addOOAction('${pid}')">+ Action Item</button>
       </div>
     </div>
@@ -1440,22 +1139,8 @@ function selectOO(pid){
         ${renderOOActions(pid)}
       </div>
       <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">Notas</div><span id="oo-note-status-${pid}" class="rte-status ok" aria-live="polite"></span></div>
-        <div class="rte-toolbar" role="toolbar" aria-label="Formatação das notas">
-          <button type="button" class="rte-btn" data-cmd="bold" title="Negrito (Ctrl+B)"><b>B</b></button>
-          <button type="button" class="rte-btn" data-cmd="italic" title="Itálico (Ctrl+I)"><i>I</i></button>
-          <button type="button" class="rte-btn" data-cmd="underline" title="Sublinhado (Ctrl+U)"><span style="text-decoration:underline">U</span></button>
-          <span class="rte-sep"></span>
-          <button type="button" class="rte-btn rte-size" data-size="2" title="Texto pequeno" style="font-size:11px">A</button>
-          <button type="button" class="rte-btn rte-size" data-size="3" title="Texto normal" style="font-size:14px">A</button>
-          <button type="button" class="rte-btn rte-size" data-size="5" title="Texto grande" style="font-size:18px">A</button>
-          <span class="rte-sep"></span>
-          ${rteSwatches()}
-          <span class="rte-sep"></span>
-          <button type="button" class="rte-btn" data-cmd="insertUnorderedList" title="Lista">•</button>
-          <button type="button" class="rte-btn" data-cmd="removeFormat" title="Limpar formatação">A̶</button>
-        </div>
-        <div id="oo-note-${pid}" class="oo-note-area rte-editor" contenteditable="true" data-ph="Anotações da conversa..." style="min-height:300px"></div>
+        <div class="oo-section-head"><div class="oo-section-title">Notas</div></div>
+        <div id="oo-note-${pid}"></div>
       </div>
       <div class="oo-section">
         <div class="oo-section-head"><div class="oo-section-title">Demandas em aberto</div></div>
@@ -1475,80 +1160,35 @@ function selectOO(pid){
       </div>
     </div>`;
   initOONote(pid);
-  loadOOMeetings(pid);
+  renderOOMeetings(pid);
 }
 
-// Editor rico das notas do 1:1 (negrito/itálico/sublinhado, tamanho, cor) + auto-save
+// Notas do 1:1: mesmo editor rico da ata, com auto-save
+let ooNoteEditor=null;
 function initOONote(pid){
-  const editor=document.getElementById('oo-note-'+pid);
-  if(!editor) return;
-  const statusEl=document.getElementById('oo-note-status-'+pid);
-  const section=editor.closest('.oo-section');
-  try{ document.execCommand('styleWithCSS',false,true); }catch(_){}
-  loadAtaIntoEditor(editor, (oo11[pid]||{}).notes);
-  editor.style.minHeight='300px';
-
-  let saveTimer=null;
-  const doSave=()=>{
-    clearTimeout(saveTimer); saveTimer=null;
-    const html=serializeAta(editor);
-    const d=ooData(pid);
-    if(html===(d.notes||'')){ if(statusEl){ statusEl.textContent=''; statusEl.className='rte-status ok'; } return; }
-    d.notes=html;
-    if(statusEl){ statusEl.textContent='Salvo ✓'; statusEl.className='rte-status ok'; }
-    saveOOState();
-  };
-  const scheduleSave=()=>{ if(statusEl){ statusEl.textContent='Editando…'; statusEl.className='rte-status'; } clearTimeout(saveTimer); saveTimer=setTimeout(doSave,700); };
-  const updateBtnStates=()=>{ ['bold','italic','underline'].forEach(c=>{ let on=false; try{ on=document.queryCommandState(c); }catch(_){} const b=section.querySelector(`.rte-btn[data-cmd="${c}"]`); if(b) b.classList.toggle('on',on); }); };
-
-  section.querySelectorAll('.rte-btn[data-cmd]').forEach(b=>{
-    b.addEventListener('mousedown',e=>e.preventDefault());
-    b.addEventListener('click',()=>{ document.execCommand(b.dataset.cmd,false,null); editor.focus(); updateBtnStates(); scheduleSave(); });
+  const host=document.getElementById('oo-note-'+pid);
+  if(!host) return;
+  ooNoteEditor=mountRTE(host,{
+    html:(oo11[pid]||{}).notes, label:'Notas do 1:1', minHeight:300, placeholder:'Anotações da conversa…',
+    onSave:async html=>{ ooData(pid).notes=html; const r=await saveOOState(); return !r?.error; }
   });
-  section.querySelectorAll('.rte-size').forEach(b=>{
-    b.addEventListener('mousedown',e=>e.preventDefault());
-    b.addEventListener('click',()=>{ document.execCommand('fontSize',false,b.dataset.size); editor.focus(); scheduleSave(); });
-  });
-  section.querySelectorAll('.rte-color').forEach(b=>{
-    b.addEventListener('mousedown',e=>e.preventDefault());
-    b.addEventListener('click',()=>{ document.execCommand('foreColor',false,b.dataset.color); editor.focus(); scheduleSave(); });
-  });
-
-  editor.addEventListener('input',scheduleSave);
-  editor.addEventListener('keyup',updateBtnStates);
-  editor.addEventListener('mouseup',updateBtnStates);
-  editor.addEventListener('blur',doSave);
 }
 
-async function loadOOMeetings(pid){
+// Reuniões com a pessoa: 1:1s gravados dela + reuniões em que ela participou (por id/nome, não por texto da ata)
+function renderOOMeetings(pid){
   const el=document.getElementById('oo-meetings-'+pid);
   if(!el) return;
-  try {
-    const p=person(pid);
-    const { data,error }=await sb.from('cmd_meetings').select('id,title,meeting_date,ata').order('meeting_date',{ascending:false}).limit(5);
-    if(error||!data){ el.innerHTML=`<div class="oo-section-head"><div class="oo-section-title">Reuniões anteriores</div></div><div style="font-size:12px;color:var(--t4);padding:4px 0">Nenhuma reunião encontrada.</div>`; return; }
-    // Filter meetings that mention this person's name
-    const relevant=data.filter(m=>(m.title||'').toLowerCase().includes(p.name.toLowerCase())||(m.ata||'').toLowerCase().includes(p.name.toLowerCase()));
-    let html=`<div class="oo-section-head"><div class="oo-section-title">Reuniões anteriores</div></div>`;
-    if(relevant.length){
-      relevant.forEach(m=>{
-        const preview=(m.ata||'').substring(0,120).replace(/\n/g,' ');
-        html+=`<button class="oo-topic" style="cursor:pointer;width:100%;text-align:left" aria-expanded="false" onclick="const f=this.querySelector('.oo-ata-full');const open=f.style.display==='block';f.style.display=open?'none':'block';this.setAttribute('aria-expanded',!open)">
-          <div style="flex:1">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-              <span class="tag dt" style="font-size:10px">${formatDate(m.meeting_date)}</span>
-              <span class="oo-topic-text" style="font-weight:500">${esc(m.title||'Reunião')}</span>
-            </div>
-            <div style="font-size:11px;color:var(--t3)">${esc(preview)}${preview.length>=120?'...':''}</div>
-            <div class="oo-ata-full" style="display:none;margin-top:8px;font-size:12px;color:var(--t2);line-height:1.7;white-space:pre-line;border-top:1px solid var(--b1);padding-top:8px">${esc(m.ata||'Sem ata disponível.')}</div>
-          </div>
-        </button>`;
-      });
-    } else {
-      html+=`<div style="font-size:12px;color:var(--t4);padding:4px 0">Nenhuma reunião com ${esc(p.name)} encontrada.</div>`;
-    }
-    el.innerHTML=html;
-  } catch(e){ console.error('loadOOMeetings:',e); }
+  const p=person(pid);
+  const list=allMeetings.filter(m=>m.person_id===pid || (m.attendees||[]).some(a=>norm(a)===norm(p.name)));
+  el.innerHTML=`<div class="oo-section-head"><div class="oo-section-title">Reuniões com ${esc(p.name)}</div></div>`+
+    (list.length ? `<div class="oo-meet-list">${list.slice(0,12).map(m=>`
+      <button type="button" class="oo-meet" onclick="openMeeting('${m.id}')">
+        <span class="tag dt">${formatDate(m.meeting_date)}</span>
+        ${showKindTag(m)?'<span class="kind-tag">1:1</span>':''}
+        <span class="oo-meet-title">${esc(m.title||'Reunião')}</span>
+        <span class="oo-meet-status">${esc(meetingStatusLabel(m))}</span>
+      </button>`).join('')}</div>`
+    : `<p class="mt-empty">Nenhuma reunião registrada com ${esc(p.name)}. Use <strong>Gravar 1:1</strong> para gravar a próxima.</p>`);
 }
 
 function renderOOActions(pid){
@@ -1712,209 +1352,44 @@ function delOOAction(pid,i){
 }
 
 // ══════════════════════════════════════════════
-// REUNIÕES VIEW
+// EDITOR RICO — ata, anotações e notas do 1:1 (guardados como HTML)
 // ══════════════════════════════════════════════
-let allMeetings=[];
-let reunSelected=null;
+// Paleta = tokens do Officio. O valor fica gravado no HTML, por isso hex fixo.
+const RTE_COLORS=[['Padrão','#1c1a17'],['Oxblood','#4a1818'],['Ferrugem','#a93b27'],['Bronze','#8b5a3c'],['Musgo','#5e7f3f'],['Ameixa','#6e4761']];
+function rteSwatches(){ return RTE_COLORS.map(([n,c])=>`<button type="button" class="rte-color" data-color="${c}" style="--sw:${c}" title="${n}" aria-label="Cor do texto: ${n}"></button>`).join(''); }
 
-async function loadAllMeetings(){
-  const { data, error }=await sb.from('cmd_meetings').select('*').order('meeting_date',{ascending:false});
-  if(error){ toast('Erro ao carregar reuniões','error'); return; }
-  allMeetings=data||[];
-}
-
-let _meetingsLoaded=false;
-function renderMeetingsList(){
-  const el=document.getElementById('reun-items');
-  if(!el) return;
-  if(!_meetingsLoaded){
-    _meetingsLoaded=true;
-    el.innerHTML='<div style="padding:16px;color:var(--t4);font-size:12px;text-align:center">Carregando...</div>';
-    loadAllMeetings().then(()=>renderMeetingsList());
-    return;
-  }
-  if(!allMeetings.length){
-    el.innerHTML='<div style="padding:16px;color:var(--t4);font-size:12px;text-align:center">Nenhuma reunião ainda. Clique + para criar.</div>';
-    return;
-  }
-  el.innerHTML=allMeetings.map(m=>{
-    const d=m.meeting_date?new Date(m.meeting_date+'T12:00:00'):new Date();
-    const day=String(d.getDate()).padStart(2,'0');
-    const mon=d.toLocaleDateString('pt-BR',{month:'short'}).replace('.','');
-    const pArr=Array.isArray(m.participants)?m.participants:typeof m.participants==='string'?m.participants.split(',').map(s=>s.trim()).filter(Boolean):[];
-    const parts=pArr.join(', ')||'Sem participantes';
-    return `<div class="reun-card ${reunSelected===m.id?'active':''}" role="button" tabindex="0" aria-pressed="${reunSelected===m.id}" onclick="selectMeeting('${m.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectMeeting('${m.id}')}">
-      <div class="reun-card-date"><div class="reun-card-day">${day}</div><div class="reun-card-mon">${mon}</div></div>
-      <div class="reun-card-info"><div class="reun-card-title">${esc(m.title||'Reunião')}</div><div class="reun-card-sub">${esc(parts)}</div></div>
-      <button class="reun-card-edit" type="button" aria-label="Editar nome da reunião" title="Editar nome" onclick="event.stopPropagation();editMeetingTitle('${m.id}')"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M11.5 2.5l2 2L6 12l-2.5.5L4 10l7.5-7.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button>
-    </div>`;
-  }).join('');
-}
-
-async function selectMeeting(id){
-  reunSelected=id;
-  renderMeetingsList();
-  const m=allMeetings.find(x=>x.id===id);
-  if(!m) return;
-  const el=document.getElementById('reun-main');
-
-  // Load demands for this meeting
-  const { data:demands }=await sb.from('cmd_meeting_demands').select('*').eq('meeting_id',id);
-  const demandList=demands||[];
-
-  // Find related tasks from main board
-  const relatedTasks=tasks.filter(t=> demandList.some(d=>d.task_id===t.id) || (t.context||'').toLowerCase().includes((m.title||'').toLowerCase()));
-
-  const mParts=Array.isArray(m.participants)?m.participants:typeof m.participants==='string'?m.participants.split(',').map(s=>s.trim()).filter(Boolean):[];
-  const partsHtml=mParts.map((p,i)=>{
-    const colors=OO_COLORS.map(c=>c.hex);
-    const c=colors[i%colors.length];
-    const init=p.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
-    return `<div class="reun-participant"><div class="reun-participant-av" style="background:${c}">${init}</div>${p}</div>`;
-  }).join('');
-
-  const demandsHtml=demandList.length? demandList.map(d=>`
-    <div class="oo-action">
-      <div style="flex:1">
-        <div class="oo-action-text">${d.title}</div>
-        <div class="oo-action-meta">
-          <span class="tag ${d.priority||'media'}">${(d.priority||'media').toUpperCase()}</span>
-          <span style="font-size:10px;color:var(--t3)">${d.person||''}</span>
-        </div>
-      </div>
-    </div>`).join('')
-    :'<div style="font-size:12px;color:var(--t4)">Nenhuma demanda registrada.</div>';
-
-  const tasksHtml=relatedTasks.length? relatedTasks.map(t=>`
-    <div class="oo-action">
-      <div style="flex:1">
-        <div class="oo-action-text">${t.done?`<s style="color:var(--t3)">${esc(t.title)}</s>`:esc(t.title)}</div>
-        <div class="oo-action-meta">
-          <span class="tag ${t.priority}">${t.priority.toUpperCase()}</span>
-          <span style="font-size:10px;color:var(--t3)">${esc(t.person||'')} · ${formatDate(t.dueDate)}</span>
-        </div>
-      </div>
-      <div class="oo-action-chk ${t.done?'done':''}" aria-hidden="true">
-        ${t.done?'<svg width="7" height="7" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5L8 3" stroke="var(--acc-on)" stroke-width="1.5" stroke-linecap="round"/></svg>':''}
-      </div>
-    </div>`).join('')
-    :'<div style="font-size:12px;color:var(--t4)">Nenhuma tarefa vinculada.</div>';
-
-  el.innerHTML=`
-    <div class="reun-head">
-      <div>
-        <div class="reun-head-title">${esc(m.title||'Reunião')}</div>
-        <div class="reun-head-date">${formatDate(m.meeting_date)}</div>
-      </div>
-      <div class="reun-head-btns">
-        <button class="oo-section-add" onclick="editMeetingNotes('${m.id}')">Editar Notas</button>
-        <button class="oo-section-add" onclick="deleteMeeting('${m.id}')">Excluir</button>
-      </div>
-    </div>
-    <div class="reun-body">
-      <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">Participantes</div></div>
-        <div class="reun-participants">${partsHtml||'<span style="font-size:12px;color:var(--t4)">Sem participantes</span>'}</div>
-      </div>
-
-      <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">Ata</div></div>
-        <div class="reun-ata" style="white-space:normal">${ataToHTML(m.ata)||'Sem ata disponível.'}</div>
-      </div>
-
-      <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">Demandas</div></div>
-        ${demandsHtml}
-      </div>
-
-      <div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">Tarefas vinculadas</div></div>
-        ${tasksHtml}
-      </div>
-
-      ${m.transcript?`<div class="oo-section">
-        <div class="oo-section-head"><div class="oo-section-title">Transcrição</div></div>
-        <div class="reun-ata" style="max-height:200px;overflow-y:auto;font-size:11.5px">${esc(m.transcript)}</div>
-      </div>`:''}
-
-      <div class="oo-section">
-        <div class="oo-section-head">
-          <div class="oo-section-title">Anotações</div>
-        </div>
-        <textarea class="oo-note-area" style="min-height:400px" placeholder="Anotações livres sobre esta reunião..." onblur="saveMeetingNotes('${m.id}',this.value)">${esc(m.notes||'')}</textarea>
-      </div>
-    </div>`;
-}
-
-function openNewMeetingModal(){
-  document.body.insertAdjacentHTML('beforeend',`
-    <div class="oo-modal-overlay" id="new-meeting-modal" onclick="if(event.target===this)this.remove()">
-      <div class="oo-modal" onclick="event.stopPropagation()" style="width:420px" role="dialog" aria-modal="true" aria-labelledby="new-meeting-modal-title">
-        <h3 id="new-meeting-modal-title">Nova Reunião</h3>
-        <div><label for="nm-title">Título</label><input id="nm-title" placeholder="Ex: Alinhamento semanal"></div>
-        <div><label for="nm-date">Data</label><input type="date" id="nm-date" value="${isoToday}"></div>
-        <div><label for="nm-parts">Participantes (separados por vírgula)</label><input id="nm-parts" placeholder="Ex: Ana, João, Pedro"></div>
-        <div><label for="nm-notes">Anotações iniciais</label><textarea id="nm-notes" class="oo-note-area" style="min-height:60px" placeholder="Pauta, observações..."></textarea></div>
-        <div class="oo-modal-btns">
-          <button class="btn-sm" onclick="document.getElementById('new-meeting-modal').remove()">Cancelar</button>
-          <button class="btn-sm primary" onclick="saveNewMeeting()">Criar</button>
-        </div>
-      </div>
-    </div>`);
-  document.getElementById('nm-title').focus();
-}
-
-async function saveNewMeeting(){
-  const title=document.getElementById('nm-title').value.trim();
-  const date=document.getElementById('nm-date').value;
-  const partsRaw=document.getElementById('nm-parts').value.trim();
-  const notes=document.getElementById('nm-notes').value.trim();
-  if(!title){ toast('Preencha o título','error'); return; }
-  const participants=partsRaw?partsRaw.split(',').map(s=>s.trim()).filter(Boolean):[];
-
-  if(!_currentSession){ toast('Sessão expirada','error'); return; }
-  const { data:meeting, error }=await sb.from('cmd_meetings').insert({
-    title, participants, meeting_date:date||isoToday, transcript:'', ata:'', notes:notes, owner_id:_currentSession.user.id
-  }).select().single();
-  if(error){ toast('Erro ao criar reunião: '+error.message,'error'); return; }
-
-  document.getElementById('new-meeting-modal').remove();
-  allMeetings.unshift(meeting);
-  renderMeetingsList();
-  selectMeeting(meeting.id);
-  toast('Reunião criada');
-}
-
-async function saveMeetingNotes(id, notes){
-  const { error }=await sb.from('cmd_meetings').update({notes}).eq('id',id);
-  if(error){ toast('Erro ao salvar notas','error'); return; }
-  const m=allMeetings.find(x=>x.id===id);
-  if(m) m.notes=notes;
-}
-
-// ── Helpers da ata (texto rico armazenado como HTML) ──
-// Paleta compartilhada do editor rico (ata de reuniões + notas dos 1:1s)
-const RTE_COLORS=[['Padrão','#2b2622'],['Oxblood','#7a1f24'],['Vermelho','#b23a26'],['Âmbar','#b8791f'],['Verde','#4d6b34'],['Teal','#2f6b6b'],['Plum','#6a3a58']];
-function rteSwatches(){ return RTE_COLORS.map(([n,c])=>`<button type="button" class="rte-color" data-color="${c}" style="--sw:${c}" title="${n}" aria-label="Cor: ${n}"></button>`).join(''); }
-
-function ataIsHTML(raw){ return /<(div|br|b|i|u|font|span|strong|em|p|ul|ol|li)[\s/>]/i.test(raw||''); }
+function ataIsHTML(raw){ return /<(div|br|b|i|u|s|font|span|strong|em|p|ul|ol|li)[\s/>]/i.test(raw||''); }
 function ataToHTML(raw){
   if(!raw) return '';
-  if(ataIsHTML(raw)) return raw;              // já é HTML (formato novo)
-  return esc(raw).replace(/\n/g,'<br>');      // legado em texto puro → preserva quebras
+  if(ataIsHTML(raw)) return sanitizeRichHTML(raw);   // HTML do editor: limpo também na leitura
+  return esc(raw).replace(/\n/g,'<br>');             // legado em texto puro → preserva quebras
 }
-function sanitizeAtaHTML(html){
-  const tmp=document.createElement('div');
-  tmp.innerHTML=html;
-  tmp.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach(n=>n.remove());
-  tmp.querySelectorAll('*').forEach(el=>{
-    [...el.attributes].forEach(a=>{
-      const n=a.name.toLowerCase();
-      if(n.startsWith('on')) el.removeAttribute(a.name);
-      else if((n==='href'||n==='src')&&/^\s*javascript:/i.test(a.value)) el.removeAttribute(a.name);
+// Allowlist: só formatação de texto sobrevive (vale para o que vem do banco e do colar)
+const RICH_TAGS=new Set(['DIV','P','BR','B','STRONG','I','EM','U','S','STRIKE','SPAN','FONT','UL','OL','LI']);
+const RICH_DROP=new Set(['SCRIPT','STYLE','IFRAME','OBJECT','EMBED','LINK','META','TEMPLATE','SVG','MATH','NOSCRIPT']);
+const RICH_STYLE=new Set(['color','line-height','font-size','font-weight','font-style','text-decoration','text-decoration-line']);
+function sanitizeRichHTML(html){
+  const tpl=document.createElement('template');
+  tpl.innerHTML=html||'';
+  const walk=parent=>{
+    [...parent.childNodes].forEach(n=>{
+      if(n.nodeType===3) return;
+      if(n.nodeType!==1 || RICH_DROP.has(n.tagName)){ n.remove(); return; }
+      walk(n);
+      if(!RICH_TAGS.has(n.tagName)){ n.replaceWith(...n.childNodes); return; }
+      [...n.attributes].forEach(a=>{
+        const name=a.name.toLowerCase();
+        if(name==='style'){
+          const keep=[...n.style].filter(k=>RICH_STYLE.has(k)).map(k=>`${k}:${n.style.getPropertyValue(k)}`).join(';');
+          keep ? n.setAttribute('style',keep) : n.removeAttribute('style');
+        } else if(!(n.tagName==='FONT' && (name==='color'||name==='size'))) n.removeAttribute(a.name);
+      });
     });
-  });
-  return tmp.innerHTML;
+  };
+  walk(tpl.content);
+  const out=document.createElement('div');
+  out.appendChild(tpl.content);
+  return out.innerHTML;
 }
 function loadAtaIntoEditor(editor, raw){
   editor.innerHTML=ataToHTML(raw);
@@ -1927,151 +1402,61 @@ function loadAtaIntoEditor(editor, raw){
   }
 }
 function serializeAta(editor){
-  const inner=sanitizeAtaHTML(editor.innerHTML).trim();
+  const inner=sanitizeRichHTML(editor.innerHTML).trim();
   if(!inner||inner==='<br>'||inner==='<div><br></div>') return '';
   const lh=editor.style.lineHeight||'1.7';
   return `<div style="line-height:${lh}">${inner}</div>`;
 }
 
-function editMeetingNotes(id){
-  const m=allMeetings.find(x=>x.id===id);
-  if(!m) return;
-  const swatches=rteSwatches();
-  // Editor de ata com formatação rica + auto-save (substitui prompt nativo)
-  document.body.insertAdjacentHTML('beforeend',`
-    <div class="oo-modal-overlay" id="edit-ata-modal">
-      <div class="oo-modal" style="width:1100px;max-width:94vw;height:90vh;max-height:90vh" role="dialog" aria-modal="true" aria-labelledby="edit-ata-title">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-          <h3 id="edit-ata-title">Editar ata</h3>
-          <span id="edit-ata-status" class="rte-status ok" aria-live="polite">Salvo</span>
-        </div>
-        <label style="font-size:11px;color:var(--t3);font-family:var(--font-mono);letter-spacing:.05em;text-transform:uppercase">${esc(m.title||'Reunião')}</label>
-        <div class="rte-toolbar" role="toolbar" aria-label="Formatação">
-          <button type="button" class="rte-btn" data-cmd="bold" title="Negrito (Ctrl+B)"><b>B</b></button>
-          <button type="button" class="rte-btn" data-cmd="italic" title="Itálico (Ctrl+I)"><i>I</i></button>
-          <button type="button" class="rte-btn" data-cmd="underline" title="Sublinhado (Ctrl+U)"><span style="text-decoration:underline">U</span></button>
-          <span class="rte-sep"></span>
-          ${swatches}
-          <span class="rte-sep"></span>
-          <button type="button" class="rte-btn rte-space" data-space="1.3" title="Espaçamento compacto">≡</button>
-          <button type="button" class="rte-btn rte-space" data-space="1.7" title="Espaçamento normal">☰</button>
-          <button type="button" class="rte-btn rte-space" data-space="2.3" title="Espaçamento amplo">≣</button>
-          <span class="rte-sep"></span>
-          <button type="button" class="rte-btn" data-cmd="removeFormat" title="Limpar formatação">A̶</button>
-        </div>
-        <div id="edit-ata-area" class="oo-note-area rte-editor" contenteditable="true" data-ph="Escreva a ata da reunião…" style="flex:1;min-height:0;font-size:13px"></div>
-        <div class="oo-modal-btns">
-          <button class="btn-sm primary" type="button" id="edit-ata-close">Concluído</button>
-        </div>
-      </div>
-    </div>`);
-  const modal=document.getElementById('edit-ata-modal');
-  const editor=modal.querySelector('#edit-ata-area');
-  const statusEl=modal.querySelector('#edit-ata-status');
+// Editor rico com auto-save. Retorna { el, flush } — flush() salva já (chamar antes de sair da tela).
+function mountRTE(container,{html='',label='Texto',placeholder='',minHeight=160,onSave}){
+  container.innerHTML=`<div class="rte">
+    <div class="rte-toolbar" role="toolbar" aria-label="Formatação: ${esc(label)}">
+      <button type="button" class="rte-btn" data-cmd="bold" aria-label="Negrito" title="Negrito (Ctrl+B)"><b>B</b></button>
+      <button type="button" class="rte-btn" data-cmd="italic" aria-label="Itálico" title="Itálico (Ctrl+I)"><i>I</i></button>
+      <button type="button" class="rte-btn" data-cmd="underline" aria-label="Sublinhado" title="Sublinhado (Ctrl+U)"><u>U</u></button>
+      <button type="button" class="rte-btn" data-cmd="insertUnorderedList" aria-label="Lista" title="Lista">${ICON.list}</button>
+      <span class="rte-sep" aria-hidden="true"></span>
+      <button type="button" class="rte-btn rte-size" data-size="2" aria-label="Texto pequeno" title="Texto pequeno"><span class="rte-a sm">A</span></button>
+      <button type="button" class="rte-btn rte-size" data-size="3" aria-label="Texto normal" title="Texto normal"><span class="rte-a">A</span></button>
+      <button type="button" class="rte-btn rte-size" data-size="5" aria-label="Texto grande" title="Texto grande"><span class="rte-a lg">A</span></button>
+      <span class="rte-sep" aria-hidden="true"></span>
+      ${rteSwatches()}
+      <span class="rte-sep" aria-hidden="true"></span>
+      <button type="button" class="rte-btn" data-cmd="removeFormat" aria-label="Limpar formatação" title="Limpar formatação">${ICON.clearFormat}</button>
+      <span class="rte-status" aria-live="polite"></span>
+    </div>
+    <div class="rte-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="${esc(label)}" data-ph="${esc(placeholder)}"></div>
+  </div>`;
+  const editor=container.querySelector('.rte-editor');
+  const statusEl=container.querySelector('.rte-status');
+  editor.style.minHeight=minHeight+'px';
   try{ document.execCommand('styleWithCSS',false,true); }catch(_){}
-  loadAtaIntoEditor(editor, m.ata);
-  const markSpace=()=>{ const lh=editor.style.lineHeight||'1.7'; modal.querySelectorAll('.rte-space').forEach(b=>b.classList.toggle('on', b.dataset.space===lh)); };
-  markSpace();
-
-  let saveTimer=null;
+  loadAtaIntoEditor(editor, html);
+  let saved=html||'', timer=null;
+  const setStatus=(t,cls='')=>{ statusEl.textContent=t; statusEl.className='rte-status '+cls; };
   const doSave=async()=>{
-    clearTimeout(saveTimer); saveTimer=null;
-    const html=serializeAta(editor);
-    if(html===(m.ata||'')){ statusEl.textContent='Salvo'; statusEl.className='rte-status ok'; return; }
-    statusEl.textContent='Salvando…'; statusEl.className='rte-status';
-    m.ata=html;
-    const { error }=await sb.from('cmd_meetings').update({ata:html}).eq('id',id);
-    if(error){ statusEl.textContent='Erro ao salvar'; statusEl.className='rte-status err'; }
-    else { statusEl.textContent='Salvo ✓'; statusEl.className='rte-status ok'; }
+    clearTimeout(timer); timer=null;
+    const out=serializeAta(editor);          // lido já: o DOM pode sumir depois do await
+    if(out===saved){ setStatus(''); return; }
+    saved=out;
+    setStatus('Salvando…');
+    const ok=await onSave(out);
+    setStatus(ok===false?'Erro ao salvar':'Salvo', ok===false?'err':'ok');
   };
-  const scheduleSave=()=>{ statusEl.textContent='Editando…'; statusEl.className='rte-status'; clearTimeout(saveTimer); saveTimer=setTimeout(doSave,700); };
-  const updateBtnStates=()=>{ ['bold','italic','underline'].forEach(c=>{ let on=false; try{ on=document.queryCommandState(c); }catch(_){} const b=modal.querySelector(`.rte-btn[data-cmd="${c}"]`); if(b) b.classList.toggle('on',on); }); };
-
-  modal.querySelectorAll('.rte-btn[data-cmd]').forEach(b=>{
-    b.addEventListener('mousedown',e=>e.preventDefault());
-    b.addEventListener('click',()=>{ document.execCommand(b.dataset.cmd,false,null); editor.focus(); updateBtnStates(); scheduleSave(); });
-  });
-  modal.querySelectorAll('.rte-color').forEach(b=>{
-    b.addEventListener('mousedown',e=>e.preventDefault());
-    b.addEventListener('click',()=>{ document.execCommand('foreColor',false,b.dataset.color); editor.focus(); scheduleSave(); });
-  });
-  modal.querySelectorAll('.rte-space').forEach(b=>{
-    b.addEventListener('mousedown',e=>e.preventDefault());
-    b.addEventListener('click',()=>{ editor.style.lineHeight=b.dataset.space; markSpace(); editor.focus(); scheduleSave(); });
-  });
-
-  editor.addEventListener('input',scheduleSave);
+  const schedule=()=>{ setStatus('Editando…'); clearTimeout(timer); timer=setTimeout(doSave,700); };
+  const updateBtnStates=()=>{ ['bold','italic','underline'].forEach(c=>{ let on=false; try{ on=document.queryCommandState(c); }catch(_){} container.querySelector(`.rte-btn[data-cmd="${c}"]`)?.classList.toggle('on',on); }); };
+  container.querySelectorAll('.rte-btn,.rte-color').forEach(b=>b.addEventListener('mousedown',e=>e.preventDefault()));
+  container.querySelectorAll('.rte-btn[data-cmd]').forEach(b=>b.addEventListener('click',()=>{ editor.focus(); document.execCommand(b.dataset.cmd,false,null); updateBtnStates(); schedule(); }));
+  container.querySelectorAll('.rte-size').forEach(b=>b.addEventListener('click',()=>{ editor.focus(); document.execCommand('fontSize',false,b.dataset.size); schedule(); }));
+  container.querySelectorAll('.rte-color').forEach(b=>b.addEventListener('click',()=>{ editor.focus(); document.execCommand('foreColor',false,b.dataset.color); schedule(); }));
+  // Colar entra como texto puro: evita trazer estilos de e-mail/site para dentro da ata
+  editor.addEventListener('paste',e=>{ const t=e.clipboardData?.getData('text/plain'); if(t==null) return; e.preventDefault(); document.execCommand('insertText',false,t); });
+  editor.addEventListener('input',schedule);
   editor.addEventListener('keyup',updateBtnStates);
   editor.addEventListener('mouseup',updateBtnStates);
-  setTimeout(()=>editor.focus(),50);
-
-  const close=async()=>{ await doSave(); modal.remove(); selectMeeting(id); };
-  modal.querySelector('#edit-ata-close').addEventListener('click',close);
-  modal.addEventListener('click',e=>{ if(e.target===modal) close(); });
-  modal.addEventListener('keydown',e=>{ if(e.key==='Escape'){ e.stopPropagation(); e.preventDefault(); close(); } });
-}
-
-function editMeetingTitle(id){
-  const m=allMeetings.find(x=>x.id===id);
-  if(!m) return;
-  // Modal de edição do nome (substitui prompt nativo)
-  document.body.insertAdjacentHTML('beforeend',`
-    <div class="oo-modal-overlay" id="edit-title-modal" onclick="if(event.target===this)this.remove()">
-      <div class="oo-modal" onclick="event.stopPropagation()" style="width:420px" role="dialog" aria-modal="true" aria-labelledby="edit-title-modal-title">
-        <h3 id="edit-title-modal-title">Editar nome</h3>
-        <div><label for="edit-title-input">Título da reunião</label><input id="edit-title-input" value="${esc(m.title||'')}" placeholder="Ex: Alinhamento semanal"></div>
-        <div class="oo-modal-btns">
-          <button class="btn-sm" type="button" onclick="document.getElementById('edit-title-modal').remove()">Cancelar</button>
-          <button class="btn-sm primary" type="button" id="edit-title-save">Salvar</button>
-        </div>
-      </div>
-    </div>`);
-  const modal=document.getElementById('edit-title-modal');
-  const input=modal.querySelector('#edit-title-input');
-  setTimeout(()=>{ input.focus(); input.select(); },50);
-  const save=async()=>{
-    const newTitle=input.value.trim();
-    if(!newTitle){ toast('Preencha o título','error'); return; }
-    if(newTitle===m.title){ modal.remove(); return; }
-    modal.remove();
-    m.title=newTitle;
-    renderMeetingsList();
-    const { error }=await sb.from('cmd_meetings').update({title:newTitle}).eq('id',id);
-    if(error){ toast('Erro ao salvar nome','error'); return; }
-    if(reunSelected===id) selectMeeting(id);
-    toast('Nome atualizado');
-  };
-  modal.querySelector('#edit-title-save').addEventListener('click',save);
-  input.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); save(); } });
-}
-
-async function deleteMeeting(id){
-  const m=allMeetings.find(x=>x.id===id);
-  if(!m) return;
-  // Mini modal de confirmação (substitui native confirm)
-  document.body.insertAdjacentHTML('beforeend',`
-    <div class="oo-modal-overlay" id="del-meeting-modal" onclick="if(event.target===this)this.remove()">
-      <div class="oo-modal" onclick="event.stopPropagation()" style="width:380px" role="alertdialog" aria-modal="true" aria-labelledby="del-meeting-title" aria-describedby="del-meeting-msg">
-        <h3 id="del-meeting-title">Excluir reunião?</h3>
-        <p id="del-meeting-msg" style="font-size:13px;color:var(--t2);line-height:1.5">Você está prestes a excluir <strong>${esc(m.title||'esta reunião')}</strong> e todas as demandas vinculadas. Esta ação não pode ser desfeita.</p>
-        <div class="oo-modal-btns">
-          <button class="btn-sm" type="button" onclick="document.getElementById('del-meeting-modal').remove()" autofocus>Cancelar</button>
-          <button class="btn-sm" type="button" id="del-meeting-confirm" style="background:var(--rust);color:var(--acc-on);border:none">Excluir</button>
-        </div>
-      </div>
-    </div>`);
-  const modal=document.getElementById('del-meeting-modal');
-  modal.querySelector('#del-meeting-confirm').addEventListener('click',async()=>{
-    modal.remove();
-    await sb.from('cmd_meeting_demands').delete().eq('meeting_id',id);
-    const { error }=await sb.from('cmd_meetings').delete().eq('id',id);
-    if(error){ toast('Erro ao excluir: '+error.message,'error'); return; }
-    allMeetings=allMeetings.filter(x=>x.id!==id);
-    reunSelected=null;
-    renderMeetingsList();
-    document.getElementById('reun-main').innerHTML='<div class="reun-empty"><div style="text-align:center"><svg width="32" height="32" viewBox="0 0 16 16" fill="none" style="margin-bottom:12px;opacity:.3" aria-hidden="true"><rect x="3" y="3" width="10" height="11.5" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="5.5" y="1.5" width="5" height="3" rx="0.5" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8.5h5M5.5 11h3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><div>Selecione ou crie uma reunião</div></div></div>';
-    toast('Reunião excluída');
-  });
+  editor.addEventListener('blur',()=>{ if(timer) doSave(); });
+  return { el:editor, flush:()=>timer?doSave():Promise.resolve() };
 }
 
 // ══════════════════════════════════════════════
@@ -2602,9 +1987,9 @@ async function saveWATariffs(){
 // INIT
 // ══════════════════════════════════════════════
 function init(){
+  renderSync();
   document.getElementById('topbar-date').textContent=today.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'}).toUpperCase();
   document.getElementById('m-date').value=isoToday;
-  document.getElementById('meeting-date').value=isoToday;
   // Sync segmented control com peopleSort persistido
   document.querySelectorAll('#view-people .seg-btn').forEach(b=>{
     b.classList.toggle('on', b.dataset.sort===peopleSort);

@@ -86,3 +86,13 @@ Operação → WhatsApp → "Gerenciar números". Cadastrar `display_phone_numbe
 - Disparar 1 template utility e 1 marketing para um destinatário de teste.
 - KPIs e gráfico devem refletir em segundos.
 - Hover na barra mostra gasto por número.
+
+## PASSO 6 — Reuniões unificadas (migration v8)
+
+A gravação agora acontece dentro de cada reunião, as demandas passam por revisão antes de virar tarefa e cada tarefa guarda a reunião de origem. **Ordem do deploy:**
+
+1. SQL Editor → executar `supabase/migration_v8_reunioes_tarefas.sql`. Faz backup das tabelas em `cmd_backup.*_v8` (schema fora da API) antes de alterar. A verificação no fim deve mostrar `attendees_suspeitos = 0`, `attendees_vazios = 0` e `concluidas_sem_data = 0`.
+2. `supabase functions deploy ai-meeting` — a IA passa a devolver `prazo` em cada demanda e tem formato próprio para 1:1.
+3. Deploy do front (Vercel). O `vercel.json` serve qualquer `.js`/`.css` de `src/`, então `recorder.js` e `meetings.js` entram sem configuração extra.
+
+O front novo não funciona antes da v8 (as colunas novas não existem); a v8 sozinha não quebra o front antigo.
