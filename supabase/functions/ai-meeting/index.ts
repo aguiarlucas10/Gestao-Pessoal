@@ -46,8 +46,32 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { transcript, title, participants, people, meeting_date, kind, person_id } = await req.json();
+    const { transcript, title, participants, people, meeting_date, kind, person_id, series_context } = await req.json();
     if (!transcript) return json({ error: "transcript required" }, 400);
+
+    // Contexto da série (opcional): o que ficou das reuniões anteriores, para a ata dizer o que andou
+    const ctx = series_context && typeof series_context === "object" ? series_context : null;
+    const clean = (v: unknown, n = 200) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+    const items = (v: unknown) => (Array.isArray(v) ? v.slice(0, 40) : []);
+    const day = (d: unknown) => /^\d{4}-\d{2}-\d{2}$/.test(String(d)) ? `${String(d).slice(8, 10)}/${String(d).slice(5, 7)}` : "";
+    const taskLine = (t: any) => {
+      const name = clean(t?.titulo);
+      if (!name) return "";
+      return `- ${name}${t?.responsavel ? ` — ${clean(t.responsavel, 60)}` : ""}${day(t?.prazo) ? ` — prazo ${day(t.prazo)}` : ""}${day(t?.de) ? ` (da reunião de ${day(t.de)})` : ""}`;
+    };
+    const openTasks = items(ctx?.tarefas_abertas).map(taskLine).filter(Boolean);
+    const doneTasks = items(ctx?.concluidas_desde).map(taskLine).filter(Boolean);
+    const pendencias = items(ctx?.pendencias).map((p) => clean(p, 300)).filter(Boolean).map((p) => `- ${p}`);
+    const hasHistory = openTasks.length + doneTasks.length + pendencias.length > 0;
+    const historyBlock = !hasHistory ? "" : [
+      `Contexto da série "${clean(ctx?.serie, 80) || clean(title, 80) || "Reunião"}"${day(ctx?.anterior) ? ` (reunião anterior em ${day(ctx.anterior)})` : ""}:`,
+      openTasks.length ? `Tarefas em aberto vindas de reuniões anteriores:\n${openTasks.join("\n")}` : "",
+      doneTasks.length ? `Concluídas desde a reunião anterior:\n${doneTasks.join("\n")}` : "",
+      pendencias.length ? `Pendências registradas na ata anterior:\n${pendencias.join("\n")}` : "",
+    ].filter(Boolean).join("\n\n");
+    const andamento = hasHistory
+      ? `\n\nANDAMENTO DESDE A ÚLTIMA\n• o que a conversa disse sobre cada item do contexto da série: concluído, avançou, travou, mudou de prazo ou de responsável. Só itens que apareceram na conversa. Omita a seção se nenhum apareceu.`
+      : "";
 
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
     if (!openaiKey) return json({ error: "OpenAI key not configured" }, 500);
@@ -100,7 +124,7 @@ ${isOneOnOne ? `Esta conversa é um 1:1 do Lucas com ${oneOnOneName}.
 
 Formato da "ata" (texto puro, sem markdown, seções separadas por linha em branco, itens começando com "• "):
 RESUMO
-2 a 4 frases com os temas centrais da conversa.
+2 a 4 frases com os temas centrais da conversa.${andamento}
 
 COMO ${oneOnOneName.toUpperCase()} ESTÁ
 • energia, carga de trabalho, bloqueios e preocupações que apareceram. Omita a seção se nada disso apareceu.
@@ -114,7 +138,7 @@ COMBINADOS
 FEEDBACK
 • feedbacks dados ou recebidos. Omita a seção se não houver.` : `Formato da "ata" (texto puro, sem markdown, seções separadas por linha em branco, itens começando com "• "):
 RESUMO
-2 a 4 frases com o objetivo da reunião e o principal resultado.
+2 a 4 frases com o objetivo da reunião e o principal resultado.${andamento}
 
 DECISÕES
 • cada decisão tomada, com o responsável quando houver.
@@ -132,11 +156,12 @@ Regras das demandas:
 - Extraia apenas tarefas concretas combinadas na reunião. Não transforme ideias soltas em tarefas.
 - Se o responsável não estiver claro, use "lucas" e tipo "minha".
 - Prioridade alta = urgente, bloqueante ou com prazo nos próximos dias.
-- "prazo": só quando um prazo foi dito ("até sexta", "semana que vem", "dia 30", "amanhã"). Calcule a data a partir da data da reunião. Se nenhum prazo foi dito, use null — não invente.`;
+- "prazo": só quando um prazo foi dito ("até sexta", "semana que vem", "dia 30", "amanhã"). Calcule a data a partir da data da reunião. Se nenhum prazo foi dito, use null — não invente.${hasHistory ? `
+- Não crie demanda que repita uma tarefa já aberta do contexto da série. Se a conversa mudou o prazo ou o responsável dela, registre isso em ANDAMENTO DESDE A ÚLTIMA.` : ""}`;
 
     const userMsg = `Reunião: ${title || "Reunião"}
 Participantes: ${participants || "time"}
-
+${historyBlock ? `\n${historyBlock}\n` : ""}
 Transcrição:
 ${transcript}`;
 

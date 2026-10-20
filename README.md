@@ -108,3 +108,15 @@ Aba **Trimestre → Plano 90 dias**: o alinhamento trimestral vira metas → ent
 3. Deploy do front (Vercel).
 
 **Não faça o deploy do front antes da v9:** o front novo envia `plan_item_id` ao salvar tarefas, e sem a coluna o salvamento falha. A v9 sozinha não quebra o front atual.
+
+## PASSO 8 — Séries de reuniões (migration v10 + ai-meeting)
+
+Reuniões recorrentes viram uma **série**: na aba Reuniões elas aparecem no topo da lista, e cada série tem uma página com a próxima data prevista, **Gravar agora** (já cria a reunião com título, participantes e pauta), a **pauta da próxima** (tarefas da série que vencem até lá, pendências da última ata e tópicos anotados), todas as tarefas que saíram das reuniões da série e o **histórico** (resumo e decisões de cada ata, com busca por tema). Cada reunião tem o campo **Série**, e a lista sugere agrupamentos para as reuniões antigas.
+
+**Ordem do deploy:**
+
+1. SQL Editor → executar `supabase/migration_v10_series.sql`. Cria `cmd_meeting_series` (com RLS) e a coluna `cmd_meetings.series_id`. A verificação no fim deve mostrar `tabela = 1`, `policies = 4` e `coluna_reunioes = 1`.
+2. Deploy do front (Vercel).
+3. Dashboard do Supabase → Edge Functions → `ai-meeting` → colar o novo `supabase/functions/ai-meeting/index.ts` e publicar. Com isso, a ata de uma reunião de série ganha a seção "Andamento desde a última" e a IA deixa de repetir tarefa que já está aberta. Pode ser feito antes ou depois do front: a função continua aceitando chamadas sem contexto de série.
+
+**Não faça o deploy do front antes da v10:** a lista de reuniões passa a pedir `series_id`, e sem a coluna a aba Reuniões não carrega.

@@ -3,7 +3,7 @@
 // ══════════════════════════════════════════════
 // Uma reunião é o objeto único da conversa: gravar, transcrever, gerar ata,
 // revisar demandas e criar tarefas acontecem dentro dela. 1:1 = kind 'oneone'.
-const MEETING_LIST_COLS='id,title,kind,person_id,meeting_date,status,attendees,demands_sent_at,started_at,duration_sec,created_at';
+const MEETING_LIST_COLS='id,title,kind,person_id,series_id,meeting_date,status,attendees,demands_sent_at,started_at,duration_sec,created_at';
 const DEFAULT_MEETING_TITLE='Nova reunião';
 
 let allMeetings=[], reunSelected=null, reunKind='all';
@@ -37,8 +37,10 @@ function defaultDue(m){
 
 // ── Carga ──
 async function loadMeetingsIndex(){
-  const { data, error }=await sb.from('cmd_meetings').select(MEETING_LIST_COLS)
-    .order('meeting_date',{ascending:false}).order('created_at',{ascending:false});
+  const [{ data, error }]=await Promise.all([
+    sb.from('cmd_meetings').select(MEETING_LIST_COLS).order('meeting_date',{ascending:false}).order('created_at',{ascending:false}),
+    loadSeries()
+  ]);
   if(error){ toast('Erro ao carregar reuniões: '+esc(error.message),'error'); return; }
   allMeetings=(data||[]).map(normMeeting);
   _meetingsLoaded=true;
@@ -127,10 +129,10 @@ async function leaveMeeting(id){
 }
 
 // ── Criação ──
-async function createMeeting({kind='meeting', person_id=null, title=DEFAULT_MEETING_TITLE, attendees=[]}={}){
+async function createMeeting({kind='meeting', person_id=null, title=DEFAULT_MEETING_TITLE, attendees=[], series_id=null, notes=''}={}){
   if(!_currentSession){ toast('Sessão expirada','error'); return null; }
   const row={ title, kind, person_id, attendees, participants:attendees.join(', '), meeting_date:isoToday,
-              status:'draft', transcript:'', ata:'', notes:'', owner_id:_currentSession.user.id };
+              status:'draft', transcript:'', ata:'', notes, series_id, owner_id:_currentSession.user.id };
   const { data, error }=await track(sb.from('cmd_meetings').insert(row).select('*').single());
   if(error){ toast('Erro ao criar reunião: '+esc(error.message),'error'); return null; }
   const m={ ...normMeeting(data), _full:true, _pristine:true };
@@ -210,12 +212,16 @@ function renderMeetingsList(){
   const el=document.getElementById('reun-items');
   if(!el) return;
   if(!_meetingsLoaded){ el.innerHTML='<p class="list-empty">Carregando…</p>'; return; }
-  const list=allMeetings.filter(m=>reunKind==='all'||m.kind===reunKind);
+  // Séries no topo; as reuniões delas não se repetem embaixo (no filtro 1:1s a lista é só de 1:1)
+  const withSeries=reunKind!=='oneone';
+  const list=allMeetings.filter(m=>(reunKind==='all'||m.kind===reunKind) && !(withSeries && meetingInListedSeries(m)));
+  const head=seriesListHTML();
   if(!list.length){
-    el.innerHTML=`<p class="list-empty">${reunKind==='oneone'?'Nenhum 1:1 gravado ainda.':'Nenhuma reunião ainda.'}<br>Use <strong>Gravar agora</strong> durante a conversa ou <strong>+</strong> para registrar depois.</p>`;
+    const allInSeries=withSeries && allMeetings.some(meetingInListedSeries);
+    el.innerHTML=head+`<p class="list-empty">${allInSeries?'Todas as reuniões estão em séries.':reunKind==='oneone'?'Nenhum 1:1 gravado ainda.':'Nenhuma reunião ainda.'}<br>Use <strong>Gravar agora</strong> durante a conversa ou <strong>+</strong> para registrar depois.</p>`;
     return;
   }
-  el.innerHTML=list.map(meetingCardHTML).join('');
+  el.innerHTML=head+list.map(meetingCardHTML).join('');
 }
 
 function renderMeetingEmpty(){
@@ -233,6 +239,7 @@ function renderMeetingEmpty(){
 async function selectMeeting(id,{focusTitle=false}={}){
   if(reunSelected && reunSelected!==id) await leaveMeeting(reunSelected);
   reunSelected=id;
+  seriesSelected=null; seriesSuggOpen=false;
   renderMeetingsList();
   const m=meetingById(id);
   if(!m){ renderMeetingEmpty(); return; }
@@ -270,6 +277,7 @@ function renderMeetingDetail(root, m){
       </div>
     </div>
     <div class="mt-body">
+      <div class="mt-series" id="mt-series"></div>
       <section class="mt-section" aria-labelledby="mt-h-people">
         <h2 class="mt-sec-title" id="mt-h-people">Participantes</h2>
         <div class="chips" id="mt-chips"></div>
@@ -305,6 +313,7 @@ function renderMeetingDetail(root, m){
     </div>`;
 
   wireMeetingHead(m);
+  renderMeetingSeriesField(m);
   renderChips(m);
   wireTranscript(m);
   renderRecoverBanner(m);
@@ -369,37 +378,35 @@ document.addEventListener('click',e=>{
 // ── Participantes ──
 function renderChips(m){
   const el=document.getElementById('mt-chips'); if(!el) return;
-  const chips=(m.attendees||[]).map((name,i)=>{
+  mountChipEditor(el,{ list:m.attendees||[], inputId:'mt-chip-input', emptyPlaceholder:'Quem participou? Enter para adicionar',
+    onChange:next=>{ saveMeetingField(m.id,{attendees:next}).then(renderMeetingsList); renderChips(m); } });
+}
+
+// Participantes em chips (reunião e série). onChange(lista nova) salva e redesenha.
+function mountChipEditor(el,{list, inputId, emptyPlaceholder, onChange}){
+  const chips=list.map((name,i)=>{
     const p=PEOPLE.find(x=>norm(x.name)===norm(name)) || {init:initialsOf(name), bg:'var(--s3)', color:'var(--t2)'};
     return `<span class="chip">${av(p,20)}<span class="chip-name">${esc(name)}</span><button type="button" class="chip-x" data-i="${i}" aria-label="Remover ${esc(name)}">${ICON.x}</button></span>`;
   }).join('');
-  const suggestions=PEOPLE.filter(p=>!(m.attendees||[]).some(a=>norm(a)===norm(p.name)));
-  el.innerHTML=chips+`<input class="chip-input" id="mt-chip-input" list="mt-people-list" autocomplete="off"
-      placeholder="${m.attendees?.length?'Adicionar…':'Quem participou? Enter para adicionar'}" aria-label="Adicionar participante">
-    <datalist id="mt-people-list">${suggestions.map(p=>`<option value="${esc(p.name)}"></option>`).join('')}</datalist>`;
-  const input=el.querySelector('#mt-chip-input');
+  const suggestions=PEOPLE.filter(p=>!list.some(a=>norm(a)===norm(p.name)));
+  el.innerHTML=chips+`<input class="chip-input" id="${inputId}" list="${inputId}-list" autocomplete="off"
+      placeholder="${list.length?'Adicionar…':esc(emptyPlaceholder)}" aria-label="Adicionar participante">
+    <datalist id="${inputId}-list">${suggestions.map(p=>`<option value="${esc(p.name)}"></option>`).join('')}</datalist>`;
+  const input=el.querySelector('#'+inputId);
+  const change=next=>{ onChange(next); document.getElementById(inputId)?.focus(); };
   const add=()=>{
     const names=input.value.split(/[,;]/).map(s=>s.trim()).filter(Boolean);
     if(!names.length) return;
-    const next=[...(m.attendees||[])];
+    const next=[...list];
     names.forEach(n=>{ if(!next.some(a=>norm(a)===norm(n))) next.push(n); });
-    saveMeetingField(m.id,{attendees:next}).then(renderMeetingsList);
-    renderChips(m);
-    document.getElementById('mt-chip-input')?.focus();
+    change(next);
   };
   input.addEventListener('keydown',e=>{
     if(e.key==='Enter'||e.key===','){ e.preventDefault(); add(); }
-    else if(e.key==='Backspace' && !input.value && m.attendees?.length){
-      saveMeetingField(m.id,{attendees:m.attendees.slice(0,-1)}).then(renderMeetingsList);
-      renderChips(m); document.getElementById('mt-chip-input')?.focus();
-    }
+    else if(e.key==='Backspace' && !input.value && list.length) change(list.slice(0,-1));
   });
   input.addEventListener('change',()=>{ if(suggestions.some(p=>p.name===input.value)) add(); });
-  el.querySelectorAll('.chip-x').forEach(b=>b.addEventListener('click',()=>{
-    const next=m.attendees.filter((_,i)=>i!==+b.dataset.i);
-    saveMeetingField(m.id,{attendees:next}).then(renderMeetingsList);
-    renderChips(m);
-  }));
+  el.querySelectorAll('.chip-x').forEach(b=>b.addEventListener('click',()=>onChange(list.filter((_,i)=>i!==+b.dataset.i))));
 }
 
 // ── Transcrição ──
@@ -500,13 +507,14 @@ async function generateAI(mid){
   await flushMeetingEditors();
   aiBusy=mid; renderAIState(m);
   try {
+    const series_context=await seriesContextFor(m);   // null fora de série: a função ignora
     const res=await fetch(`${SB_URL}/functions/v1/ai-meeting`,{
       method:'POST',
       headers:{ 'Authorization':'Bearer '+_currentSession.access_token, 'Content-Type':'application/json' },
       body:JSON.stringify({
         transcript, title:m.title||'Reunião', participants:(m.attendees||[]).join(', '),
         people:PEOPLE.map(p=>({ id:p.id, name:p.name, role:p.role||'' })),
-        meeting_date:m.meeting_date||isoToday, kind:m.kind, person_id:m.person_id
+        meeting_date:m.meeting_date||isoToday, kind:m.kind, person_id:m.person_id, series_context
       })
     });
     const result=await res.json().catch(()=>({}));
@@ -696,7 +704,9 @@ function renderMeetingTasks(m){
 }
 
 function refreshOpenMeeting(){
-  if(currentView!=='reunioes' || !reunSelected) return;
+  if(currentView!=='reunioes') return;
+  if(seriesSelected){ refreshOpenSeries(); return; }
+  if(!reunSelected) return;
   const m=meetingById(reunSelected); if(!m || !m._full) return;
   renderMeetingTasks(m);
   renderDemands(m);
