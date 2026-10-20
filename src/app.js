@@ -132,6 +132,7 @@ function onTasksChanged(){
   if(currentView==='people') renderPeople();
   if(currentView==='reunioes') refreshOpenMeeting();
   if(currentView==='reunioes') renderMeetingsList();
+  if(currentView==='plano') renderPlan();
 }
 
 // Close topmost open modal on Escape (a11y: dialogs must be dismissable via keyboard)
@@ -139,6 +140,7 @@ document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   // Dynamic modals first (most recently opened)
   const dyn = document.getElementById('del-meeting-modal')
+           || document.getElementById('plan-status-modal')
            || document.getElementById('cal-day-popup')
            || document.getElementById('oo-person-modal');
   if (dyn) { dyn.remove(); return; }
@@ -194,6 +196,7 @@ sb.auth.onAuthStateChange((event, session)=>{
         await loadOOState();
         await loadTasks();
         await loadMeetingsIndex();
+        await loadPlan();
         await loadWA();
         scheduleNotifCheck();
         showBriefing();
@@ -228,14 +231,14 @@ async function loadTasks(){
 function dbToTask(r){
   return { id:r.id, title:r.title, person:r.person, dueDate:r.due_date, priority:r.priority, tipo:r.tipo, context:r.context||'', done:r.done, notes:r.notes||'', recurrence:r.recurrence||null,
            originType:r.origin_type||null, originId:r.origin_id||null, createdAt:r.created_at||new Date().toISOString(), completedAt:r.completed_at||null,
-           lastFollowupAt:r.last_followup_at||null, followupCount:r.followup_count||0 };
+           lastFollowupAt:r.last_followup_at||null, followupCount:r.followup_count||0, planItemId:r.plan_item_id||null };
 }
 
 async function sbUpsert(t){
   if(!_currentSession){ toast('Sessão expirada','error'); return; }
   // created_at / completed_at são do banco (trigger): nunca enviados daqui
   const row={ id:String(t.id), title:t.title, person:t.person, due_date:t.dueDate||null, priority:t.priority, tipo:t.tipo, context:t.context||'', done:t.done, notes:t.notes||'', recurrence:t.recurrence||null,
-              origin_type:t.originType||'manual', origin_id:t.originId||null, last_followup_at:t.lastFollowupAt||null, followup_count:t.followupCount||0, owner_id:_currentSession.user.id };
+              origin_type:t.originType||'manual', origin_id:t.originId||null, last_followup_at:t.lastFollowupAt||null, followup_count:t.followupCount||0, plan_item_id:t.planItemId||null, owner_id:_currentSession.user.id };
   const { error }=await track(sb.from('cmd_tasks').upsert(row,{onConflict:'id'}));
   if(error) toast('Erro ao salvar: '+error.message,'error');
 }
@@ -356,6 +359,8 @@ function showBriefing(){
     html+=`</div>`;
   }
 
+  html+=planBriefingHTML();
+
   document.getElementById('briefing-body').innerHTML=html;
   document.getElementById('briefing-overlay').classList.add('open');
 }
@@ -413,7 +418,7 @@ document.addEventListener('click', e=>{
 // ══════════════════════════════════════════════
 // NAV
 // ══════════════════════════════════════════════
-const NAV_TITLES={ board:'Tarefas', calendar:'Calendário', people:'Por Pessoa', '11':'1:1s com o Time', reunioes:'Reuniões', whatsapp:'WhatsApp · Disparos Oficiais' };
+const NAV_TITLES={ board:'Tarefas', calendar:'Calendário', people:'Por Pessoa', plano:'Plano 90 dias', '11':'1:1s com o Time', reunioes:'Reuniões', whatsapp:'WhatsApp · Disparos Oficiais' };
 
 function navTo(view){ switchNav(view, document.querySelector(`.nav-item[data-view="${view}"]`)); }
 
@@ -428,6 +433,7 @@ function switchNav(view, el){
   currentView=view;
   if(view==='calendar') renderCal();
   if(view==='people') renderPeople();
+  if(view==='plano') renderPlan();
   if(view==='11') renderOneOne();
   if(view==='reunioes') renderMeetingsList();
   if(view==='whatsapp') renderWhatsApp();
@@ -473,6 +479,7 @@ function filterTask(t){
   if(boardFilter==='baixa' && t.priority!=='baixa') return false;
   if(boardFilter==='minha' && t.tipo!=='minha') return false;
   if(boardFilter==='delegada' && t.tipo!=='delegada') return false;
+  if(boardFilter==='plano' && !t.planItemId) return false;
   if(searchQ && !t.title.toLowerCase().includes(searchQ.toLowerCase())) return false;
   return true;
 }
@@ -528,6 +535,7 @@ function cardHTML(t){
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority==='alta'?'▲':t.priority==='media'?'●':'▼'} ${t.priority.toUpperCase()}</span>
         ${originLabel(t)?`<span class="tag origem">${esc(originLabel(t))}</span>`:''}
+        ${planTagHTML(t)}
         <span class="tag dt ${over?'overdue':tod?'overdue':''}">${formatDate(t.dueDate)}</span>
         ${fub}
         ${t.recurrence?`<span class="tag" style="background:var(--moss-bg);color:var(--moss);font-size:9px">↻ ${t.recurrence==='daily'?'Diária':t.recurrence==='weekly'?'Semanal':'Mensal'}</span>`:''}
@@ -558,7 +566,7 @@ async function toggleDone(id){
     toast('Tarefa concluída ✓');
     // Create next occurrence for recurring tasks
     if(t.recurrence && t.dueDate){
-      const next={ id:crypto.randomUUID(), title:t.title, person:t.person, dueDate:nextRecurrenceDate(t.dueDate,t.recurrence), priority:t.priority, tipo:t.tipo, context:t.context, done:false, notes:'', recurrence:t.recurrence };
+      const next={ id:crypto.randomUUID(), title:t.title, person:t.person, dueDate:nextRecurrenceDate(t.dueDate,t.recurrence), priority:t.priority, tipo:t.tipo, context:t.context, done:false, notes:'', recurrence:t.recurrence, planItemId:t.planItemId };
       tasks.unshift(next);
       await sbUpsert(next);
       onTasksChanged();
@@ -595,6 +603,7 @@ function openPanel(id){
     ${t.originId && meetingById(t.originId)
       ? `<div class="sp-field"><span class="sp-label">Origem</span><button type="button" class="sp-origin" onclick="openMeeting('${t.originId}')">${ICON.meeting.replace('class="empty-icon" width="32" height="32"','width="14" height="14"')}<span>${esc(originLabel(t))}</span><span class="sp-origin-go">Abrir reunião</span></button></div>`
       : `<label class="sp-field"><span class="sp-label">Origem / Reunião</span><input class="date-input" value="${esc(t.context||'')}" placeholder="Ex: 1:1 Junior" onblur="updateField('${id}','context',this.value)" style="font-family:var(--font-body)"></label>`}
+    ${plan||t.planItemId?`<label class="sp-field"><span class="sp-label">Plano 90 dias</span><select class="date-input" onchange="updateField('${id}','planItemId',this.value||null)" style="font-family:var(--font-body)">${planItemOptionsHTML(t.planItemId)}</select></label>`:''}
     ${t.recurrence?`<label class="sp-field"><span class="sp-label">Recorrência</span><select class="date-input" onchange="updateField('${id}','recurrence',this.value||null)"><option value="">Nenhuma</option><option value="daily" ${t.recurrence==='daily'?'selected':''}>Diária</option><option value="weekly" ${t.recurrence==='weekly'?'selected':''}>Semanal</option><option value="monthly" ${t.recurrence==='monthly'?'selected':''}>Mensal</option></select></label>`:''}
     <label class="sp-field"><span class="sp-label">Notas</span><textarea class="sp-notes" placeholder="Próximos passos..." onblur="updateField('${id}','notes',this.value)">${esc(t.notes||'')}</textarea></label>
     <button class="sp-del" onclick="deleteTask('${id}')">Excluir tarefa</button>
@@ -741,6 +750,7 @@ function personCardHTML(t){
         <span class="tag ${t.priority}">${t.priority.toUpperCase()}</span>
         <span class="tag dt ${over||tod?'overdue':''}">${formatDate(t.dueDate)}</span>
         ${originLabel(t)?`<span class="tag origem">${esc(originLabel(t))}</span>`:''}
+        ${planTagHTML(t)}
       </div>
     </div>`;
 }
@@ -818,6 +828,7 @@ function openCalDayPopup(dateStr, dayNum){
       <div class="card-tags">
         <span class="tag ${t.priority}">${t.priority==='alta'?'▲':t.priority==='media'?'●':'▼'} ${t.priority.toUpperCase()}</span>
         ${originLabel(t)?`<span class="tag origem">${esc(originLabel(t))}</span>`:''}
+        ${planTagHTML(t)}
       </div>
       <div class="card-foot"><div class="card-person">${av(p,16)} ${esc(p.name)}</div></div>
     </div>`;
@@ -852,7 +863,7 @@ function openCalDayPopup(dateStr, dayNum){
 // ══════════════════════════════════════════════
 // TASK MODAL
 // ══════════════════════════════════════════════
-function openTaskModal(_, personHint, dateHint){
+function openTaskModal(_, personHint, dateHint, planItemHint){
   // Reset form state
   document.getElementById('m-title').value='';
   document.getElementById('m-context').value='';
@@ -868,6 +879,8 @@ function openTaskModal(_, personHint, dateHint){
   sel.value=personHint || (PEOPLE.find(p=>p.id!==ME_ID)||ME).id;
   if(dateHint) document.getElementById('m-date').value=dateHint;
   else document.getElementById('m-date').value=isoToday;
+  document.getElementById('m-plan-row').hidden=!plan;
+  document.getElementById('m-plan-item').innerHTML=planItemOptionsHTML(planItemHint||'');
   openModal('task-modal');
   setTimeout(()=>document.getElementById('m-title').focus(),50);
 }
@@ -883,7 +896,8 @@ async function addTask(){
   if(!_currentSession){ toast('Sessão expirada','error'); return; }
   const newId=crypto.randomUUID();
   const rec=document.getElementById('m-recurrence').value||null;
-  const t={ id:newId, title, person:document.getElementById('m-person').value, dueDate:document.getElementById('m-date').value, priority:mPrio, tipo:mTipo, context:document.getElementById('m-context').value, done:false, notes:'', recurrence:rec };
+  const t={ id:newId, title, person:document.getElementById('m-person').value, dueDate:document.getElementById('m-date').value, priority:mPrio, tipo:mTipo, context:document.getElementById('m-context').value, done:false, notes:'', recurrence:rec,
+            planItemId:document.getElementById('m-plan-item').value||null };
   tasks.unshift(t);
   closeModal('task-modal');
   document.getElementById('m-title').value=''; document.getElementById('m-context').value='';

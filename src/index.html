@@ -49,6 +49,10 @@
       <button class="nav-item" data-view="people" onclick="switchNav('people',this)"><svg class="nav-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="6" cy="5.5" r="2.25" stroke="currentColor" stroke-width="1.5"/><path d="M2 13.5c0-2 1.8-3.5 4-3.5s4 1.5 4 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="11.5" cy="6.5" r="1.75" stroke="currentColor" stroke-width="1.5"/><path d="M14.5 13c0-1.5-1.2-2.7-3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Por Pessoa</button>
     </div>
     <div class="nav-section">
+      <div class="nav-sec-label">Trimestre</div>
+      <button class="nav-item" data-view="plano" onclick="switchNav('plano',this)"><svg class="nav-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="3" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="0.75" fill="currentColor"/></svg>Plano 90 dias<span class="nav-badge" id="nav-badge-plano" title="Entregáveis entregues / total" hidden></span></button>
+    </div>
+    <div class="nav-section">
       <div class="nav-sec-label">Reuniões</div>
       <button class="nav-item" data-view="11" onclick="switchNav('11',this)"><svg class="nav-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 4A1.5 1.5 0 0 1 4 2.5h6A1.5 1.5 0 0 1 11.5 4v5A1.5 1.5 0 0 1 10 10.5H7l-3 3v-3A1.5 1.5 0 0 1 2.5 9V4z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13.5 7v3a1.5 1.5 0 0 1-1.5 1.5h-.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>1:1s</button>
       <button class="nav-item" data-view="reunioes" onclick="switchNav('reunioes',this)"><svg class="nav-icon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="3" width="10" height="11.5" rx="1.5" stroke="currentColor" stroke-width="1.5"/><rect x="5.5" y="1.5" width="5" height="3" rx="0.5" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 8.5h5M5.5 11h3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Reuniões</button>
@@ -110,6 +114,7 @@
             <button class="fchip f-baixa" onclick="setFilter('baixa',this)">Baixa</button>
             <button class="fchip f-minha" onclick="setFilter('minha',this)">Minhas</button>
             <button class="fchip f-delegada" onclick="setFilter('delegada',this)">Delegadas</button>
+            <button class="fchip f-plano" onclick="setFilter('plano',this)">Plano</button>
             <div class="board-search">
               <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="m11 11 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
               <input type="text" placeholder="Buscar..." aria-label="Buscar tarefas" oninput="searchQ=this.value;debouncedRenderBoard()">
@@ -160,6 +165,21 @@
           </div>
           <div class="people-board" id="people-board"></div>
         </div>
+      </div>
+
+      <!-- PLANO 90 DIAS -->
+      <div class="view-panel" id="view-plano">
+        <div class="plan-toolbar" id="plan-toolbar" hidden>
+          <div class="seg" role="group" aria-label="Visão do plano">
+            <button type="button" class="seg-btn on" data-plan-view="metas" aria-pressed="true" onclick="setPlanView('metas')">Metas</button>
+            <button type="button" class="seg-btn" data-plan-view="meses" aria-pressed="false" onclick="setPlanView('meses')">Meses</button>
+          </div>
+          <label class="plan-hide"><input type="checkbox" id="plan-hide-done" onchange="setPlanHideDone(this.checked)">Ocultar entregues</label>
+          <span class="plan-toolbar-sp" aria-hidden="true"></span>
+          <button type="button" class="btn-sm" id="plan-status-btn" onclick="copyPlanStatus()">Status p/ Junior</button>
+          <button type="button" class="add-btn" onclick="addPlanGoal()">+ Meta</button>
+        </div>
+        <div class="plan-scroll"><div class="plan-inner" id="plan-root"></div></div>
       </div>
 
       <!-- 1:1 -->
@@ -332,6 +352,11 @@
         </select>
       </div>
     </div>
+    <div class="modal-row" id="m-plan-row" hidden>
+      <div class="sp-field"><label class="sp-label" for="m-plan-item">Entregável do plano</label>
+        <select class="modal-input" id="m-plan-item"><option value="">Nenhum</option></select>
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn-ghost" onclick="closeModal('task-modal')">Cancelar</button>
       <button class="btn-primary" onclick="addTask()">Criar Tarefa</button>
@@ -404,5 +429,6 @@
 <script src="app.js" defer></script>
 <script src="recorder.js" defer></script>
 <script src="meetings.js" defer></script>
+<script src="plan.js" defer></script>
 </body>
 </html>

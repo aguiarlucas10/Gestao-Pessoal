@@ -96,3 +96,15 @@ A gravação agora acontece dentro de cada reunião, as demandas passam por revi
 3. Deploy do front (Vercel). O `vercel.json` serve qualquer `.js`/`.css` de `src/`, então `recorder.js` e `meetings.js` entram sem configuração extra.
 
 O front novo não funciona antes da v8 (as colunas novas não existem); a v8 sozinha não quebra o front antigo.
+
+## PASSO 7 — Plano 90 dias (migration v9 + seed)
+
+Aba **Trimestre → Plano 90 dias**: o alinhamento trimestral vira metas → entregáveis → tarefas, com prazo, % entregue vs. % do trimestre, linha do tempo out/nov/dez, "Status p/ Junior" (copia um resumo) e seção no briefing da manhã. Cada tarefa pode pertencer a um entregável (campo "Entregável do plano" no modal e no painel da tarefa; chip **Plano** no board).
+
+**Ordem do deploy:**
+
+1. SQL Editor → executar `supabase/migration_v9_plano.sql`. Cria `cmd_plans`, `cmd_plan_goals`, `cmd_plan_items` (com RLS) e a coluna `cmd_tasks.plan_item_id`. A verificação no fim deve mostrar `tabelas = 3`, `4` policies em cada tabela e `coluna_tarefas = 1`.
+2. SQL Editor → executar o seed do alinhamento do trimestre (ex.: `supabase/seed_plano_4tri_2026.sql`, que carrega 5 seções, 19 entregáveis e 5 gaps). O seed **não é versionado**, porque tem o conteúdo do alinhamento e este repositório é público. Ele fica só na máquina local. É idempotente; se não conseguir identificar o dono, ele para e pede que `v_email` seja preenchido no topo.
+3. Deploy do front (Vercel).
+
+**Não faça o deploy do front antes da v9:** o front novo envia `plan_item_id` ao salvar tarefas, e sem a coluna o salvamento falha. A v9 sozinha não quebra o front atual.
