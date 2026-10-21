@@ -1047,3 +1047,9 @@ select.plan-input{cursor:pointer}
   .ser-banner{flex-shrink:0;width:230px;margin:0}
 }
 #ser-agenda,#ser-tasks{display:flex;flex-direction:column;gap:8px}
+
+/* Reunião: "+" ao lado do título das tarefas; origem fixa no modal */
+.mt-sec-title-row{display:flex;align-items:center;gap:8px}
+.mt-add{min-width:26px;min-height:26px;padding:2px 8px;font-size:14px;line-height:1}
+.modal-input[readonly]{background:var(--s2);color:var(--t2);cursor:default}
+.modal-input[readonly]:focus{border-color:var(--b2);box-shadow:none}

@@ -23,7 +23,7 @@ let tasks = [];
 let boardFilter='all', searchQ='', peopleFilter='all', peopleQ='';
 let peopleSort = (typeof localStorage!=='undefined' && localStorage.getItem('tasks_people_sort')) || 'prazo';
 let calView='month', calDate=new Date(today.getFullYear(),today.getMonth(),1);
-let mPrio='media', mTipo='delegada';
+let mPrio='media', mTipo='delegada', mOrigin=null;
 let ooSelected=null;
 let notifications=[], notifOpen=false;
 let currentView='board';
@@ -864,10 +864,15 @@ function openCalDayPopup(dateStr, dayNum){
 // ══════════════════════════════════════════════
 // TASK MODAL
 // ══════════════════════════════════════════════
-function openTaskModal(_, personHint, dateHint, planItemHint){
+function openTaskModal(_, personHint, dateHint, planItemHint, originMeetingId){
   // Reset form state
   document.getElementById('m-title').value='';
-  document.getElementById('m-context').value='';
+  // Aberto de dentro de uma reunião: a tarefa nasce ligada a ela (origem fixa)
+  const om=originMeetingId && meetingById(originMeetingId);
+  mOrigin=om ? om.id : null;
+  const ctx=document.getElementById('m-context');
+  ctx.value=om ? (om.title||'Reunião') : '';
+  ctx.readOnly=!!om;
   mPrio='media'; mTipo='delegada';
   document.querySelectorAll('#task-modal .pbtn').forEach(b=>{b.classList.remove('sel');b.setAttribute('aria-pressed','false')});
   const mediaBtn=document.querySelector('#task-modal .pbtn.media'); mediaBtn.classList.add('sel'); mediaBtn.setAttribute('aria-pressed','true');
@@ -897,8 +902,11 @@ async function addTask(){
   if(!_currentSession){ toast('Sessão expirada','error'); return; }
   const newId=crypto.randomUUID();
   const rec=document.getElementById('m-recurrence').value||null;
+  const om=mOrigin && meetingById(mOrigin);
   const t={ id:newId, title, person:document.getElementById('m-person').value, dueDate:document.getElementById('m-date').value, priority:mPrio, tipo:mTipo, context:document.getElementById('m-context').value, done:false, notes:'', recurrence:rec,
-            planItemId:document.getElementById('m-plan-item').value||null };
+            planItemId:document.getElementById('m-plan-item').value||null,
+            originType:om?(om.kind==='oneone'?'oneone':'meeting'):null, originId:om?om.id:null };
+  mOrigin=null;
   tasks.unshift(t);
   closeModal('task-modal');
   document.getElementById('m-title').value=''; document.getElementById('m-context').value='';

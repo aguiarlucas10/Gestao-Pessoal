@@ -283,6 +283,26 @@ function renderMeetingDetail(root, m){
         <div class="chips" id="mt-chips"></div>
       </section>
 
+      <section class="mt-section" aria-labelledby="mt-h-notes">
+        <div class="mt-sec-head"><h2 class="mt-sec-title" id="mt-h-notes">Anotações</h2></div>
+        <div id="mt-notes"></div>
+      </section>
+
+      <section class="mt-section" aria-labelledby="mt-h-dem">
+        <div class="mt-sec-head"><h2 class="mt-sec-title" id="mt-h-dem">Demandas</h2><span class="mt-count" id="mt-dem-count"></span></div>
+        <div id="mt-demands"></div>
+      </section>
+
+      <section class="mt-section" aria-labelledby="mt-h-tasks">
+        <div class="mt-sec-head">
+          <div class="mt-sec-title-row">
+            <h2 class="mt-sec-title" id="mt-h-tasks">Tarefas desta reunião</h2>
+            <button type="button" class="oo-manage-btn mt-add" id="mt-add-task" aria-label="Adicionar tarefa a esta reunião" title="Adicionar tarefa a esta reunião">+</button>
+          </div>
+        </div>
+        <div id="mt-tasks"></div>
+      </section>
+
       <section class="mt-section" aria-labelledby="mt-h-trans">
         <div class="mt-sec-head"><h2 class="mt-sec-title" id="mt-h-trans">Transcrição</h2><span class="mt-count" id="mt-words"></span></div>
         <div id="mt-recover"></div>
@@ -295,23 +315,11 @@ function renderMeetingDetail(root, m){
         <div class="mt-sec-head"><h2 class="mt-sec-title" id="mt-h-ata">Ata</h2></div>
         <div id="mt-ata"></div>
       </section>
-
-      <section class="mt-section" aria-labelledby="mt-h-dem">
-        <div class="mt-sec-head"><h2 class="mt-sec-title" id="mt-h-dem">Demandas</h2><span class="mt-count" id="mt-dem-count"></span></div>
-        <div id="mt-demands"></div>
-      </section>
-
-      <section class="mt-section" aria-labelledby="mt-h-tasks">
-        <div class="mt-sec-head"><h2 class="mt-sec-title" id="mt-h-tasks">Tarefas desta reunião</h2></div>
-        <div id="mt-tasks"></div>
-      </section>
-
-      <section class="mt-section" aria-labelledby="mt-h-notes">
-        <div class="mt-sec-head"><h2 class="mt-sec-title" id="mt-h-notes">Anotações</h2></div>
-        <div id="mt-notes"></div>
-      </section>
     </div>`;
 
+  // "+" das tarefas: modal já ligado a esta reunião (no 1:1, para a pessoa; prazo padrão de uma semana)
+  document.getElementById('mt-add-task').addEventListener('click',()=>
+    openTaskModal(null, m.kind==='oneone'?m.person_id:null, defaultDue(m), null, m.id));
   wireMeetingHead(m);
   renderMeetingSeriesField(m);
   renderChips(m);
@@ -700,7 +708,7 @@ function renderMeetingTasks(m){
       <button type="button" class="mt-task-title" onclick="openPanel('${t.id}')">${esc(t.title)}</button>
       <span class="mt-task-meta">${av(p,16)}<span>${esc(p.name)}</span><span class="tag dt ${!t.done&&isOverdue(t.dueDate)?'overdue':''}">${formatDate(t.dueDate)}</span></span>
     </div>`;
-  }).join('')}</div>` : `<p class="mt-empty">Nenhuma tarefa ainda. As demandas que você criar aparecem aqui, e seguem ligadas a esta reunião mesmo se ela mudar de nome.</p>`;
+  }).join('')}</div>` : `<p class="mt-empty">Nenhuma tarefa ainda. As demandas que você enviar e as tarefas criadas no <strong>+</strong> aparecem aqui, e seguem ligadas a esta reunião mesmo se ela mudar de nome.</p>`;
 }
 
 function refreshOpenMeeting(){
