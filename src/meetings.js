@@ -288,11 +288,6 @@ function renderMeetingDetail(root, m){
         <div id="mt-notes"></div>
       </section>
 
-      <section class="mt-section" aria-labelledby="mt-h-dem">
-        <div class="mt-sec-head"><h2 class="mt-sec-title" id="mt-h-dem">Demandas</h2><span class="mt-count" id="mt-dem-count"></span></div>
-        <div id="mt-demands"></div>
-      </section>
-
       <section class="mt-section" aria-labelledby="mt-h-tasks">
         <div class="mt-sec-head">
           <div class="mt-sec-title-row">
@@ -301,6 +296,11 @@ function renderMeetingDetail(root, m){
           </div>
         </div>
         <div id="mt-tasks"></div>
+      </section>
+
+      <section class="mt-section" aria-labelledby="mt-h-dem">
+        <div class="mt-sec-head"><h2 class="mt-sec-title" id="mt-h-dem">Demandas</h2><span class="mt-count" id="mt-dem-count"></span></div>
+        <div id="mt-demands"></div>
       </section>
 
       <section class="mt-section" aria-labelledby="mt-h-trans">
