@@ -141,6 +141,7 @@ document.addEventListener('keydown', e => {
   // Dynamic modals first (most recently opened)
   const dyn = document.getElementById('del-meeting-modal')
            || document.getElementById('del-series-modal')
+           || document.getElementById('merge-series-modal')
            || document.getElementById('plan-status-modal')
            || document.getElementById('cal-day-popup')
            || document.getElementById('oo-person-modal');

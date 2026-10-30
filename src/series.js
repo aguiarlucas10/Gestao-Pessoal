@@ -20,6 +20,7 @@ function seriesMeetings(sid){ return allMeetings.filter(m=>m.series_id===sid).so
 function seriesTasks(sid){ const ids=new Set(seriesMeetings(sid).map(m=>m.id)); return tasks.filter(t=>t.originId && ids.has(t.originId)); }
 // A reunião sai da lista quando a série dela aparece lá
 function meetingInListedSeries(m){ return !!m.series_id && liveSeries().some(s=>s.id===m.series_id); }
+function seriesByTitle(title, exceptId=null){ const t=norm(title); return t ? liveSeries().find(s=>s.id!==exceptId && norm(s.title)===t) : null; }
 function cadenceOptions(sel){ return Object.entries(CADENCES).map(([k,v])=>`<option value="${k}" ${sel===k?'selected':''}>${v}</option>`).join(''); }
 function plural(n,one,many){ return `${n} ${n===1?one:many}`; }
 
@@ -258,6 +259,7 @@ function renderSeriesPage(s){
         <div class="menu-wrap">
           <button class="icon-btn" id="ser-menu-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="ser-menu" aria-label="Mais ações da série">${ICON.more}</button>
           <div class="menu" id="ser-menu" role="menu" hidden>
+            <button role="menuitem" data-act="merge">Juntar com outra série…</button>
             <button role="menuitem" class="danger" data-act="delete">Excluir série…</button>
           </div>
         </div>
@@ -327,6 +329,7 @@ function wireSeriesHead(s){
   menu.addEventListener('click',e=>{
     const act=e.target.closest('[data-act]')?.dataset.act; if(!act) return;
     close();
+    if(act==='merge') openMergeSeries(s.id);
     if(act==='delete') deleteSeries(s.id);
   });
 }
@@ -507,6 +510,55 @@ function deleteSeries(sid){
   });
 }
 
+// ── Juntar séries: as reuniões e a pauta passam para a outra, esta é apagada ──
+function openMergeSeries(sid){
+  const s=seriesById(sid); if(!s) return;
+  const others=liveSeries().filter(x=>x.id!==sid);
+  if(!others.length){ toast('Não há outra série para juntar','info'); return; }
+  const pre=seriesByTitle(s.title, sid)?.id;
+  const n=seriesMeetings(sid).length;
+  document.body.insertAdjacentHTML('beforeend',`
+    <div class="oo-modal-overlay" id="merge-series-modal" onclick="if(event.target===this)this.remove()">
+      <div class="oo-modal" role="dialog" aria-modal="true" aria-labelledby="merge-series-title" aria-describedby="merge-series-msg">
+        <h3 id="merge-series-title">Juntar séries</h3>
+        <p id="merge-series-msg" class="modal-msg">${n?`As ${plural(n,'reunião','reuniões')} de <strong>${esc(s.title)}</strong>`:`A pauta de <strong>${esc(s.title)}</strong>`} ${n===1?'passa':'passam'} para a série escolhida. Depois esta série é apagada.</p>
+        <label class="mt-series-lbl" for="merge-series-sel">Juntar com</label>
+        <select class="plan-input" id="merge-series-sel">
+          ${others.sort((a,b)=>a.title.localeCompare(b.title,'pt-BR')).map(x=>`<option value="${x.id}" ${x.id===pre?'selected':''}>${esc(x.title)} · ${plural(seriesMeetings(x.id).length,'reunião','reuniões')}</option>`).join('')}
+        </select>
+        <div class="oo-modal-btns">
+          <button class="btn-sm" type="button" id="merge-series-cancel">Cancelar</button>
+          <button class="btn-sm primary" type="button" id="merge-series-confirm">Juntar</button>
+        </div>
+      </div>
+    </div>`);
+  const modal=document.getElementById('merge-series-modal');
+  modal.querySelector('#merge-series-cancel').addEventListener('click',()=>modal.remove());
+  modal.querySelector('#merge-series-sel').focus();
+  modal.querySelector('#merge-series-confirm').addEventListener('click',async()=>{
+    const into=modal.querySelector('#merge-series-sel').value;
+    modal.remove();
+    await mergeSeries(sid, into);
+  });
+}
+
+async function mergeSeries(fromId, intoId){
+  const from=seriesById(fromId), into=seriesById(intoId);
+  if(!from || !into || fromId===intoId) return;
+  const { error }=await track(sb.from('cmd_meetings').update({series_id:intoId}).eq('series_id',fromId));
+  if(error){ toast('Erro ao mover as reuniões: '+esc(error.message),'error'); return; }
+  allMeetings.forEach(m=>{ if(m.series_id===fromId) m.series_id=intoId; });
+  const attendees=[...into.attendees, ...from.attendees.filter(a=>!into.attendees.some(b=>norm(b)===norm(a)))];
+  const ok=await saveSeries(intoId,{ attendees, agenda:[...into.agenda, ...from.agenda] });
+  if(!ok) return;
+  const { error:delErr }=await track(sb.from('cmd_meeting_series').delete().eq('id',fromId));
+  if(delErr){ toast('Reuniões movidas, mas a série antiga não foi apagada: '+esc(delErr.message),'error'); }
+  else allSeries=allSeries.filter(x=>x.id!==fromId);
+  if(seriesSelected===fromId) seriesSelected=null;
+  await selectSeries(intoId);
+  toast(`Séries juntadas em “${esc(into.title)}”`);
+}
+
 // ── Sugestões: reuniões avulsas que parecem a mesma série ──
 // Junta por palavra do título ou por participantes idênticos (uma reunião de título
 // genérico, como "Reunião de 19 de out.", entra pelo grupo de pessoas).
@@ -621,7 +673,7 @@ function renderSeriesSuggestions(){
             <span class="dem-meta">${esc((m.attendees||[]).join(', ')||'sem participantes')}</span>
           </label>`).join('')}</div>
         <div class="dem-foot">
-          <button type="button" class="btn-primary" onclick="acceptSeriesSuggestion(${i})">Criar série</button>
+          <button type="button" class="btn-primary" onclick="acceptSeriesSuggestion(${i})">${seriesByTitle(g.name)?'Adicionar à série existente':'Criar série'}</button>
           <button type="button" class="btn-sm ser-sugg-skip" onclick="dismissSeriesSuggestion(${i})">Ignorar</button>
         </div>
       </section>`).join('')}
@@ -634,6 +686,17 @@ async function acceptSeriesSuggestion(i){
   const ids=[...sec.querySelectorAll('input[type=checkbox]:checked')].map(c=>c.value);
   if(!ids.length){ toast('Marque pelo menos uma reunião','error'); return; }
   const title=sec.querySelector('.ser-sugg-name').value.trim()||g.name;
+  // Já existe série com esse nome: as reuniões entram nela em vez de criar uma duplicada
+  const existing=seriesByTitle(title);
+  if(existing){
+    const { error }=await track(sb.from('cmd_meetings').update({series_id:existing.id}).in('id',ids));
+    if(error){ toast('Erro ao adicionar à série: '+esc(error.message),'error'); return; }
+    ids.forEach(id=>{ const m=meetingById(id); if(m) m.series_id=existing.id; });
+    renderMeetingsList();
+    renderSeriesSuggestions();
+    toast(`${plural(ids.length,'reunião adicionada','reuniões adicionadas')} à série “${esc(existing.title)}”`,'success',{label:'Abrir',cb:()=>selectSeries(existing.id)});
+    return;
+  }
   const s=await createSeries({ title, cadence:sec.querySelector('.ser-sugg-cad').value, attendees:g.attendees, meetingIds:ids });
   if(!s) return;
   renderMeetingsList();
