@@ -8,6 +8,7 @@
 
 let askThreads=[], askThreadId=null, askMessages=[];
 let askBusy=false, askLoaded=false, askDbOk=true, askPending='';
+let askHistOpen=false, askDelPending=null;   // lista de conversas aberta / conversa aguardando confirmação
 
 const ASK_EXAMPLES=[
   'O que combinei com o Junior sobre a meta de faturamento dos quiosques?',
@@ -28,6 +29,7 @@ async function openAsk(){
 }
 function closeAsk(){
   const p=askPanel(); if(!p) return;
+  closeAskHist();
   p.hidden=true;
   const btn=document.getElementById('ask-btn');
   btn?.setAttribute('aria-expanded','false');
@@ -43,15 +45,82 @@ async function loadAskThreads(){
   renderAskThreads();
 }
 
+// "hoje 14:32", "ontem 09:10" ou "28 out."
+function askWhen(iso){
+  const d=new Date(iso); if(isNaN(d)) return '';
+  const day=isoDate(d), hm=d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  if(day===isoDate(new Date())) return 'hoje '+hm;
+  if(day===isoDate(addDays(new Date(),-1))) return 'ontem '+hm;
+  return formatDate(day);
+}
+
+const ASK_TRASH='<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 4.5h11M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M4 4.5l.7 8.6a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9l.7-8.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
 function renderAskThreads(){
-  const sel=document.getElementById('ask-threads'); if(!sel) return;
-  sel.hidden=!askDbOk || !askThreads.length;
-  sel.innerHTML=`<option value="">${askThreadId?'Conversas anteriores':'Nova conversa'}</option>`
-    + askThreads.map(t=>`<option value="${t.id}" ${t.id===askThreadId?'selected':''}>${esc(t.title||'Sem título')} · ${esc(formatDate(String(t.updated_at).slice(0,10)))}</option>`).join('');
+  const btn=document.getElementById('ask-hist-btn'); if(!btn) return;
+  const has=askDbOk && askThreads.length>0;
+  btn.hidden=!has;
+  document.getElementById('ask-hist-count').textContent=askThreads.length||'';
+  if(!has) closeAskHist();
+  const list=document.getElementById('ask-hist-list'); if(!list) return;
+  list.innerHTML=askThreads.map(t=>{
+    const title=esc(t.title||'Sem título');
+    if(askDelPending===t.id) return `<li class="ask-hist-row confirm" role="group" aria-label="Confirmar exclusão">
+      <span class="ask-hist-q">Apagar “${title}”?</span>
+      <span class="ask-hist-actions">
+        <button type="button" class="btn-sm" onclick="askCancelDelete()">Cancelar</button>
+        <button type="button" class="btn-sm danger" id="ask-del-confirm" onclick="askDeleteThread('${t.id}')">Apagar</button>
+      </span>
+    </li>`;
+    return `<li class="ask-hist-row ${t.id===askThreadId?'active':''}">
+      <button type="button" class="ask-hist-open" onclick="selectAskThread('${t.id}')" ${t.id===askThreadId?'aria-current="true"':''}>
+        <span class="ask-hist-title">${title}</span>
+        <span class="ask-hist-date">${esc(askWhen(t.updated_at))}</span>
+      </button>
+      <button type="button" class="ask-hist-del" onclick="askConfirmDelete('${t.id}')" aria-label="Apagar conversa: ${title}" title="Apagar conversa">${ASK_TRASH}</button>
+    </li>`;
+  }).join('');
+}
+
+function toggleAskHist(){ askHistOpen ? closeAskHist() : openAskHist(); }
+function openAskHist(){
+  askHistOpen=true; askDelPending=null;
+  renderAskThreads();
+  document.getElementById('ask-hist').hidden=false;
+  document.getElementById('ask-hist-btn').setAttribute('aria-expanded','true');
+  document.querySelector('#ask-hist-list .ask-hist-open')?.focus();
+}
+function closeAskHist(){
+  if(!askHistOpen) return;
+  askHistOpen=false; askDelPending=null;
+  const pop=document.getElementById('ask-hist'); if(pop) pop.hidden=true;
+  document.getElementById('ask-hist-btn')?.setAttribute('aria-expanded','false');
+}
+
+function askConfirmDelete(id){
+  askDelPending=id; renderAskThreads();
+  document.getElementById('ask-del-confirm')?.focus();
+}
+function askCancelDelete(){
+  const id=askDelPending; askDelPending=null; renderAskThreads();
+  document.querySelector(`#ask-hist-list .ask-hist-del[onclick*="${id}"]`)?.focus();
+}
+async function askDeleteThread(id){
+  if(askBusy && id===askThreadId){ toast('Aguarde a resposta terminar','error'); return; }
+  const { error }=await track(sb.from('cmd_ask_threads').delete().eq('id',id));   // mensagens vão junto (cascade)
+  if(error){ toast('Erro ao apagar a conversa: '+esc(error.message),'error'); return; }
+  askThreads=askThreads.filter(t=>t.id!==id);
+  askDelPending=null;
+  if(askThreadId===id){ askThreadId=null; askMessages=[]; renderAsk(); }
+  renderAskThreads();
+  if(askThreads.length) document.querySelector('#ask-hist-list .ask-hist-open')?.focus();
+  else document.getElementById('ask-input')?.focus();
+  toast('Conversa apagada');
 }
 
 async function selectAskThread(id){
   if(askBusy) return;
+  closeAskHist();
   if(!id){ askNewThread(); return; }
   const { data, error }=await sb.from('cmd_ask_messages').select('role,content,sources,created_at').eq('thread_id',id).order('created_at');
   if(error){ toast('Erro ao abrir a conversa: '+esc(error.message),'error'); return; }
@@ -63,6 +132,7 @@ async function selectAskThread(id){
 
 function askNewThread(){
   if(askBusy) return;
+  closeAskHist();
   askThreadId=null; askMessages=[];
   renderAskThreads(); renderAsk();
   document.getElementById('ask-input')?.focus();
@@ -219,5 +289,15 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(e.key==='Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); sendAsk(); }
   });
   document.getElementById('ask-form')?.addEventListener('submit',e=>{ e.preventDefault(); sendAsk(); });
-  document.getElementById('ask-threads')?.addEventListener('change',e=>selectAskThread(e.target.value));
+  // Lista de conversas: Esc fecha só a lista (não o painel); clique fora também fecha
+  document.getElementById('ask-hist')?.addEventListener('keydown',e=>{
+    if(e.key!=='Escape') return;
+    e.stopPropagation();
+    if(askDelPending){ askCancelDelete(); return; }
+    closeAskHist(); document.getElementById('ask-hist-btn')?.focus();
+  });
+});
+document.addEventListener('click',e=>{
+  // composedPath: a lixeira/confirmação redesenham a lista, então o alvo pode já ter saído do DOM
+  if(askHistOpen && !e.composedPath().some(el=>el.id==='ask-hist' || el.id==='ask-hist-btn')) closeAskHist();
 });

@@ -434,9 +434,16 @@
 <aside class="ask-panel" id="ask-panel" aria-labelledby="ask-title" hidden>
   <div class="ask-head">
     <h2 class="ask-title" id="ask-title">Perguntar</h2>
-    <select class="ask-threads" id="ask-threads" aria-label="Conversas anteriores" hidden></select>
+    <button type="button" class="ask-hist-btn" id="ask-hist-btn" onclick="toggleAskHist()" aria-haspopup="true" aria-expanded="false" aria-controls="ask-hist" hidden>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/><path d="M8 5v3.2l2 1.3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Conversas</span><span class="ask-hist-count" id="ask-hist-count"></span>
+      <svg class="ask-hist-chev" width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
     <button type="button" class="btn-sm ask-new" onclick="askNewThread()">+ Nova</button>
     <button type="button" class="sp-close" onclick="closeAsk()" aria-label="Fechar painel Perguntar">✕</button>
+  </div>
+  <div class="ask-hist" id="ask-hist" role="region" aria-label="Conversas anteriores" hidden>
+    <ul class="ask-hist-list" id="ask-hist-list"></ul>
   </div>
   <div class="ask-log" id="ask-log" aria-live="polite"></div>
   <form class="ask-form" id="ask-form">
