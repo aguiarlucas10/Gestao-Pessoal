@@ -152,6 +152,7 @@ document.addEventListener('keydown', e => {
   if (document.getElementById('wa-tariffs-modal')?.classList.contains('open')) { closeModal('wa-tariffs-modal'); return; }
   if (document.getElementById('briefing-overlay')?.classList.contains('open')) { closeBriefing(); return; }
   if (document.getElementById('notif-panel')?.classList.contains('open')) { toggleNotifPanel(); return; }
+  if (typeof askIsOpen==='function' && askIsOpen()) { closeAsk(); return; }
 });
 
 // ══════════════════════════════════════════════

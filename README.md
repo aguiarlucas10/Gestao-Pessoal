@@ -120,3 +120,15 @@ Reuniões recorrentes viram uma **série**: na aba Reuniões elas aparecem no to
 3. Dashboard do Supabase → Edge Functions → `ai-meeting` → colar o novo `supabase/functions/ai-meeting/index.ts` e publicar. Com isso, a ata de uma reunião de série ganha a seção "Andamento desde a última" e a IA deixa de repetir tarefa que já está aberta. Pode ser feito antes ou depois do front: a função continua aceitando chamadas sem contexto de série.
 
 **Não faça o deploy do front antes da v10:** a lista de reuniões passa a pedir `series_id`, e sem a coluna a aba Reuniões não carrega.
+
+## PASSO 9 — Perguntar (migration v11 + cmd-ask)
+
+Botão **Perguntar** no topo (ou Ctrl/⌘+K) abre um painel lateral para fazer perguntas sobre o que já foi conversado. A Edge Function `cmd-ask` lê as reuniões (ata, anotações e transcrição), as tarefas e o Plano 90 dias do próprio usuário (RLS) e responde citando as fontes, que abrem a reunião, a tarefa ou o plano ao clicar. Funciona em duas etapas: a IA primeiro escolhe as fontes num catálogo resumido e depois lê só essas por completo.
+
+**Ordem do deploy:**
+
+1. SQL Editor → executar `supabase/migration_v11_perguntas.sql`. Cria `cmd_ask_threads` e `cmd_ask_messages` (com RLS). A verificação no fim deve mostrar `tabelas = 2` e `policies = 8`.
+2. Deploy da função: `supabase functions deploy cmd-ask --no-verify-jwt` (a função valida o usuário por conta própria, como as outras).
+3. Deploy do front (Vercel).
+
+Sem a v11 o painel funciona, só não salva as conversas. Modelo opcional: `supabase secrets set ASK_MODEL=gpt-6-sol`.
